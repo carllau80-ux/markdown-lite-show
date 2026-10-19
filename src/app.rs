@@ -36,6 +36,40 @@ impl Theme {
 
     fn palette(self, accent: AccentColor) -> Palette {
         let colors = accent.colors(self == Self::Dark);
+        if cfg!(target_os = "macos") {
+            return match self {
+                Self::Light => Palette {
+                    toolbar: Color32::from_rgb(0xec, 0xec, 0xee),
+                    editor_bg: Color32::from_rgb(0xf5, 0xf5, 0xf7),
+                    preview_bg: Color32::from_rgb(0xf2, 0xf2, 0xf7),
+                    page: Color32::from_rgb(0xff, 0xff, 0xff),
+                    text: Color32::from_rgb(0x1d, 0x1d, 0x1f),
+                    muted: Color32::from_rgb(0x6e, 0x6e, 0x73),
+                    accent: colors.accent,
+                    accent_button: colors.button,
+                    accent_soft: colors.soft,
+                    border: Color32::from_rgb(0xd1, 0xd1, 0xd6),
+                    status: Color32::from_rgb(0xec, 0xec, 0xee),
+                    code_bg: Color32::from_rgb(0xf2, 0xf2, 0xf7),
+                    error: Color32::from_rgb(0xc0, 0x36, 0x2c),
+                },
+                Self::Dark => Palette {
+                    toolbar: Color32::from_rgb(0x2c, 0x2c, 0x2e),
+                    editor_bg: Color32::from_rgb(0x1c, 0x1c, 0x1e),
+                    preview_bg: Color32::from_rgb(0x1c, 0x1c, 0x1e),
+                    page: Color32::from_rgb(0x2c, 0x2c, 0x2e),
+                    text: Color32::from_rgb(0xf2, 0xf2, 0xf7),
+                    muted: Color32::from_rgb(0x98, 0x98, 0x9d),
+                    accent: colors.accent,
+                    accent_button: colors.button,
+                    accent_soft: colors.soft,
+                    border: Color32::from_rgb(0x3a, 0x3a, 0x3c),
+                    status: Color32::from_rgb(0x2c, 0x2c, 0x2e),
+                    code_bg: Color32::from_rgb(0x3a, 0x3a, 0x3c),
+                    error: Color32::from_rgb(0xff, 0x69, 0x61),
+                },
+            };
+        }
         match self {
             Self::Light => Palette {
                 toolbar: Color32::from_rgb(0xfb, 0xfa, 0xf6),
@@ -161,6 +195,10 @@ pub struct MarkLiteApp {
     last_dir: Option<PathBuf>,
     focus_editor: bool,
     window_title: String,
+    #[cfg(target_os = "macos")]
+    native_menu: Option<crate::native_menu::NativeMenu>,
+    #[cfg(target_os = "macos")]
+    native_menu_failed: bool,
 }
 
 impl MarkLiteApp {
@@ -184,9 +222,13 @@ impl MarkLiteApp {
             last_dir: std::env::current_dir().ok(),
             focus_editor: true,
             window_title: String::new(),
+            #[cfg(target_os = "macos")]
+            native_menu: None,
+            #[cfg(target_os = "macos")]
+            native_menu_failed: false,
         };
 
-        app.install_icon_font(&cc.egui_ctx);
+        app.install_fonts(&cc.egui_ctx);
         app.apply_styles(&cc.egui_ctx);
         app.update_effective_theme(&cc.egui_ctx);
         egui_extras::install_image_loaders(&cc.egui_ctx);
@@ -203,13 +245,29 @@ impl MarkLiteApp {
         app
     }
 
-    fn install_icon_font(&self, ctx: &egui::Context) {
+    fn install_fonts(&self, ctx: &egui::Context) {
         let mut fonts = egui::FontDefinitions::default();
         let data = egui::FontData::from_static(include_bytes!("../assets/fonts/Phosphor.ttf"));
         fonts.font_data.insert("phosphor".into(), data.into());
         if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
             family.insert(family.len().min(1), "phosphor".into());
         }
+
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        if let Some(data) = load_system_font(&db, false) {
+            fonts.font_data.insert("system-ui".into(), data.into());
+            if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+                family.insert(0, "system-ui".into());
+            }
+        }
+        if let Some(data) = load_system_font(&db, true) {
+            fonts.font_data.insert("system-mono".into(), data.into());
+            if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+                family.insert(0, "system-mono".into());
+            }
+        }
+
         ctx.set_fonts(fonts);
     }
 
@@ -246,8 +304,15 @@ impl MarkLiteApp {
             visuals.code_bg_color = palette.code_bg;
             visuals.hyperlink_color = palette.accent;
             visuals.error_fg_color = palette.error;
-            visuals.window_corner_radius = CornerRadius::same(12);
-            visuals.menu_corner_radius = CornerRadius::same(10);
+            let (widget_radius, window_radius, menu_radius) = if cfg!(target_os = "macos") {
+                (6, 10, 8)
+            } else if cfg!(target_os = "windows") {
+                (4, 8, 4)
+            } else {
+                (7, 12, 10)
+            };
+            visuals.window_corner_radius = CornerRadius::same(window_radius);
+            visuals.menu_corner_radius = CornerRadius::same(menu_radius);
             visuals.selection.bg_fill = Color32::from_rgba_unmultiplied(
                 palette.accent.r(),
                 palette.accent.g(),
@@ -263,7 +328,7 @@ impl MarkLiteApp {
                 &mut visuals.widgets.active,
                 &mut visuals.widgets.open,
             ] {
-                widget.corner_radius = CornerRadius::same(7);
+                widget.corner_radius = CornerRadius::same(widget_radius);
             }
 
             visuals.widgets.noninteractive.bg_fill = palette.page;
@@ -286,9 +351,19 @@ impl MarkLiteApp {
 
             style.visuals = visuals;
             style.url_in_tooltip = true;
-            style.spacing.item_spacing = egui::vec2(8.0, 7.0);
-            style.spacing.button_padding = egui::vec2(11.0, 5.0);
-            style.spacing.interact_size.y = 28.0;
+            if cfg!(target_os = "macos") {
+                style.spacing.item_spacing = egui::vec2(7.0, 6.0);
+                style.spacing.button_padding = egui::vec2(9.0, 4.0);
+                style.spacing.interact_size.y = 26.0;
+            } else if cfg!(target_os = "windows") {
+                style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+                style.spacing.button_padding = egui::vec2(10.0, 4.0);
+                style.spacing.interact_size.y = 27.0;
+            } else {
+                style.spacing.item_spacing = egui::vec2(8.0, 7.0);
+                style.spacing.button_padding = egui::vec2(11.0, 5.0);
+                style.spacing.interact_size.y = 28.0;
+            }
             style
                 .text_styles
                 .insert(TextStyle::Body, FontId::proportional(14.5));
@@ -325,6 +400,90 @@ impl MarkLiteApp {
         self.apply_styles(ctx);
         self.update_effective_theme(ctx);
         self.persist_settings();
+    }
+
+    fn uses_native_menu(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            self.native_menu.is_some()
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            false
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ensure_native_menu(&mut self, ctx: &egui::Context) {
+        if self.native_menu_failed {
+            return;
+        }
+        if self.native_menu.as_ref().map(|menu| menu.language) == Some(self.settings.language) {
+            return;
+        }
+        match crate::native_menu::NativeMenu::install(ctx, self.settings.language) {
+            Some(menu) => self.native_menu = Some(menu),
+            None => self.native_menu_failed = true,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn process_native_menu(&mut self, ctx: &egui::Context) {
+        let actions = self
+            .native_menu
+            .as_ref()
+            .map(|menu| menu.poll())
+            .unwrap_or_default();
+        let modal_open = self.settings_open
+            || self.about_open
+            || self.pending.is_some()
+            || self.error_message.is_some();
+        for action in actions {
+            if modal_open && !matches!(action, crate::native_menu::NativeAction::Quit) {
+                continue;
+            }
+            match action {
+                crate::native_menu::NativeAction::NewTab => {
+                    self.add_untitled_document();
+                }
+                crate::native_menu::NativeAction::Open => self.open_dialog(),
+                crate::native_menu::NativeAction::Save => {
+                    self.save_active();
+                }
+                crate::native_menu::NativeAction::SaveAs => {
+                    self.save_active_as();
+                }
+                crate::native_menu::NativeAction::CloseTab => {
+                    self.request_close_tab(self.active, ctx);
+                }
+                crate::native_menu::NativeAction::EditMode => {
+                    self.mode = Mode::Edit;
+                    self.focus_editor = true;
+                }
+                crate::native_menu::NativeAction::SplitMode => {
+                    self.mode = Mode::Split;
+                    self.focus_editor = true;
+                }
+                crate::native_menu::NativeAction::PreviewMode => {
+                    self.mode = Mode::Preview;
+                }
+                crate::native_menu::NativeAction::ExportPdf => self.export_pdf(),
+                crate::native_menu::NativeAction::ExportWord => self.export_docx(),
+                crate::native_menu::NativeAction::Settings => self.settings_open = true,
+                crate::native_menu::NativeAction::Quit => {
+                    ctx.send_viewport_cmd(ViewportCommand::Close);
+                }
+                crate::native_menu::NativeAction::GitHub => {
+                    ctx.open_url(egui::OpenUrl::new_tab(mdlite::GITHUB_URL));
+                }
+                crate::native_menu::NativeAction::Email => {
+                    ctx.open_url(egui::OpenUrl::new_tab(format!(
+                        "mailto:{}",
+                        mdlite::AUTHOR_EMAIL
+                    )));
+                }
+            }
+        }
     }
 
     fn active_doc(&self) -> &Document {
@@ -425,30 +584,37 @@ impl MarkLiteApp {
             return;
         }
 
+        let native_menu = self.uses_native_menu();
         let mut new_mode = None;
         let mut action = None;
 
         ctx.input_mut(|input| {
-            if input.consume_key(Modifiers::COMMAND, Key::N) {
-                action = Some(Shortcut::New);
-            } else if input.consume_key(Modifiers::COMMAND, Key::O) {
-                action = Some(Shortcut::Open);
-            } else if input.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::S) {
-                action = Some(Shortcut::SaveAs);
-            } else if input.consume_key(Modifiers::COMMAND, Key::S) {
-                action = Some(Shortcut::Save);
-            } else if input.consume_key(Modifiers::COMMAND, Key::W) {
-                action = Some(Shortcut::CloseTab);
-            } else if input.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Tab) {
-                action = Some(Shortcut::PreviousTab);
-            } else if input.consume_key(Modifiers::COMMAND, Key::Tab) {
-                action = Some(Shortcut::NextTab);
-            } else if input.consume_key(Modifiers::COMMAND, Key::Num1) {
-                new_mode = Some(Mode::Edit);
-            } else if input.consume_key(Modifiers::COMMAND, Key::Num2) {
-                new_mode = Some(Mode::Split);
-            } else if input.consume_key(Modifiers::COMMAND, Key::Num3) {
-                new_mode = Some(Mode::Preview);
+            if !native_menu {
+                if input.consume_key(Modifiers::COMMAND, Key::N) {
+                    action = Some(Shortcut::New);
+                } else if input.consume_key(Modifiers::COMMAND, Key::O) {
+                    action = Some(Shortcut::Open);
+                } else if input.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::S) {
+                    action = Some(Shortcut::SaveAs);
+                } else if input.consume_key(Modifiers::COMMAND, Key::S) {
+                    action = Some(Shortcut::Save);
+                } else if input.consume_key(Modifiers::COMMAND, Key::W) {
+                    action = Some(Shortcut::CloseTab);
+                } else if input.consume_key(Modifiers::COMMAND, Key::Num1) {
+                    new_mode = Some(Mode::Edit);
+                } else if input.consume_key(Modifiers::COMMAND, Key::Num2) {
+                    new_mode = Some(Mode::Split);
+                } else if input.consume_key(Modifiers::COMMAND, Key::Num3) {
+                    new_mode = Some(Mode::Preview);
+                }
+            }
+
+            if action.is_none() && new_mode.is_none() {
+                if input.consume_key(Modifiers::CTRL | Modifiers::SHIFT, Key::Tab) {
+                    action = Some(Shortcut::PreviousTab);
+                } else if input.consume_key(Modifiers::CTRL, Key::Tab) {
+                    action = Some(Shortcut::NextTab);
+                }
             }
         });
 
@@ -513,90 +679,141 @@ impl MarkLiteApp {
                     );
                     ui.add_space(10.0);
 
-                    ui.menu_button(icon_text(icons::FILES, i18n.file_menu()), |ui| {
-                        if menu_button(ui, icons::FILE_PLUS, i18n.new_tab(), Some(&shortcut_new))
-                            .clicked()
-                        {
-                            self.add_untitled_document();
-                            ui.close();
+                    if self.uses_native_menu() {
+                        ui.label(
+                            RichText::new(self.active_display_name())
+                                .size(12.5)
+                                .color(palette.muted),
+                        );
+                        if self.active_doc().dirty {
+                            ui.label(RichText::new("●").size(8.0).color(palette.accent));
                         }
-                        if menu_button(ui, icons::FOLDER_OPEN, i18n.open(), Some(&shortcut_open))
-                            .clicked()
-                        {
-                            self.open_dialog();
-                            ui.close();
-                        }
-                        ui.separator();
-                        if menu_button(ui, icons::FLOPPY_DISK, i18n.save(), Some(&shortcut_save))
-                            .clicked()
-                        {
-                            self.save_active();
-                            ui.close();
-                        }
-                        if menu_button(
-                            ui,
-                            icons::COPY_SIMPLE,
-                            i18n.save_as(),
-                            Some(&shortcut_save_as),
-                        )
-                        .clicked()
-                        {
-                            self.save_active_as();
-                            ui.close();
-                        }
-                        ui.separator();
-                        if menu_button(ui, icons::X, i18n.close_tab(), Some(&shortcut_close_tab))
-                            .clicked()
-                        {
-                            self.request_close_tab(self.active, &ctx);
-                            ui.close();
-                        }
-                        if menu_button(ui, icons::SIGN_OUT, i18n.exit(), None).clicked() {
-                            ctx.send_viewport_cmd(ViewportCommand::Close);
-                            ui.close();
-                        }
-                    });
+                    }
 
-                    ui.menu_button(icon_text(icons::EYE, i18n.view_menu()), |ui| {
-                        for (mode, icon, label) in [
-                            (Mode::Edit, icons::PENCIL_SIMPLE, i18n.edit_mode()),
-                            (Mode::Split, icons::COLUMNS, i18n.split_mode()),
-                            (Mode::Preview, icons::EYE, i18n.preview_mode()),
-                        ] {
-                            if ui
-                                .selectable_label(self.mode == mode, icon_text(icon, label))
-                                .clicked()
+                    if !self.uses_native_menu() {
+                        ui.menu_button(icon_text(icons::FILES, i18n.file_menu()), |ui| {
+                            if menu_button(
+                                ui,
+                                icons::FILE_PLUS,
+                                i18n.new_tab(),
+                                Some(&shortcut_new),
+                            )
+                            .clicked()
                             {
-                                self.mode = mode;
-                                if mode != Mode::Preview {
-                                    self.focus_editor = true;
-                                }
+                                self.add_untitled_document();
                                 ui.close();
                             }
-                        }
-                    });
+                            if menu_button(
+                                ui,
+                                icons::FOLDER_OPEN,
+                                i18n.open(),
+                                Some(&shortcut_open),
+                            )
+                            .clicked()
+                            {
+                                self.open_dialog();
+                                ui.close();
+                            }
+                            ui.separator();
+                            if menu_button(
+                                ui,
+                                icons::FLOPPY_DISK,
+                                i18n.save(),
+                                Some(&shortcut_save),
+                            )
+                            .clicked()
+                            {
+                                self.save_active();
+                                ui.close();
+                            }
+                            if menu_button(
+                                ui,
+                                icons::COPY_SIMPLE,
+                                i18n.save_as(),
+                                Some(&shortcut_save_as),
+                            )
+                            .clicked()
+                            {
+                                self.save_active_as();
+                                ui.close();
+                            }
+                            ui.separator();
+                            if menu_button(
+                                ui,
+                                icons::X,
+                                i18n.close_tab(),
+                                Some(&shortcut_close_tab),
+                            )
+                            .clicked()
+                            {
+                                self.request_close_tab(self.active, &ctx);
+                                ui.close();
+                            }
+                            if menu_button(ui, icons::SIGN_OUT, i18n.exit(), None).clicked() {
+                                ctx.send_viewport_cmd(ViewportCommand::Close);
+                                ui.close();
+                            }
+                        });
 
-                    ui.menu_button(icon_text(icons::EXPORT, i18n.export_menu()), |ui| {
-                        if menu_button(ui, icons::FILE_PDF, i18n.export_pdf(), None).clicked() {
-                            self.export_pdf();
-                            ui.close();
-                        }
-                        if menu_button(ui, icons::FILE_DOC, i18n.export_word(), None).clicked() {
-                            self.export_docx();
-                            ui.close();
-                        }
-                    });
+                        ui.menu_button(icon_text(icons::EYE, i18n.view_menu()), |ui| {
+                            for (mode, icon, label) in [
+                                (Mode::Edit, icons::PENCIL_SIMPLE, i18n.edit_mode()),
+                                (Mode::Split, icons::COLUMNS, i18n.split_mode()),
+                                (Mode::Preview, icons::EYE, i18n.preview_mode()),
+                            ] {
+                                if ui
+                                    .selectable_label(self.mode == mode, icon_text(icon, label))
+                                    .clicked()
+                                {
+                                    self.mode = mode;
+                                    if mode != Mode::Preview {
+                                        self.focus_editor = true;
+                                    }
+                                    ui.close();
+                                }
+                            }
+                        });
 
-                    ui.menu_button(icon_text(icons::QUESTION, i18n.help_menu()), |ui| {
-                        if menu_button(ui, icons::INFO, i18n.about(), None).clicked() {
-                            self.about_open = true;
-                            ui.close();
-                        }
-                        if menu_button(ui, icons::GEAR, i18n.settings(), None).clicked() {
-                            self.settings_open = true;
-                            ui.close();
-                        }
-                    });
+                        ui.menu_button(icon_text(icons::EXPORT, i18n.export_menu()), |ui| {
+                            if menu_button(ui, icons::FILE_PDF, i18n.export_pdf(), None).clicked() {
+                                self.export_pdf();
+                                ui.close();
+                            }
+                            if menu_button(ui, icons::FILE_DOC, i18n.export_word(), None).clicked()
+                            {
+                                self.export_docx();
+                                ui.close();
+                            }
+                        });
+
+                        ui.menu_button(icon_text(icons::QUESTION, i18n.help_menu()), |ui| {
+                            if menu_button(ui, icons::INFO, i18n.about(), None).clicked() {
+                                self.about_open = true;
+                                ui.close();
+                            }
+                            if menu_button(ui, icons::GEAR, i18n.settings(), None).clicked() {
+                                self.settings_open = true;
+                                ui.close();
+                            }
+                            ui.separator();
+                            if menu_button(ui, icons::GITHUB_LOGO, i18n.github_repository(), None)
+                                .clicked()
+                            {
+                                ui.ctx()
+                                    .open_url(egui::OpenUrl::new_tab(mdlite::GITHUB_URL));
+                                ui.close();
+                            }
+                            if menu_button(ui, icons::ENVELOPE_SIMPLE, i18n.email_author(), None)
+                                .clicked()
+                            {
+                                ui.ctx().open_url(egui::OpenUrl::new_tab(format!(
+                                    "mailto:{}",
+                                    mdlite::AUTHOR_EMAIL
+                                )));
+                                ui.close();
+                            }
+                        });
+                    }
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if small_button(
@@ -723,56 +940,51 @@ impl MarkLiteApp {
                                         Stroke::NONE
                                     })
                                     .corner_radius(7)
-                                    .inner_margin(Margin::symmetric(9, 4))
+                                    .inner_margin(Margin::symmetric(8, 3))
                                     .show(ui, |ui| {
                                         ui.horizontal(|ui| {
-                                            ui.label(
-                                                RichText::new(icons::MARKDOWN_LOGO)
-                                                    .size(13.0)
-                                                    .color(if active {
-                                                        palette.accent
-                                                    } else {
-                                                        palette.muted
-                                                    }),
-                                            );
-                                            ui.label(
-                                                RichText::new(truncate_chars(&name, 28))
-                                                    .size(12.5)
-                                                    .color(if active {
-                                                        palette.text
-                                                    } else {
-                                                        palette.muted
-                                                    }),
+                                            let color =
+                                                if active { palette.text } else { palette.muted };
+                                            let mut label_text = format!(
+                                                "{}  {}",
+                                                icons::MARKDOWN_LOGO,
+                                                truncate_chars(&name, 28)
                                             );
                                             if doc.dirty {
-                                                ui.label(
-                                                    RichText::new("●")
-                                                        .size(7.0)
-                                                        .color(palette.accent),
-                                                );
+                                                label_text.push_str("  ●");
                                             }
-                                            ui.add(
-                                                egui::Button::new(
-                                                    RichText::new(icons::X)
-                                                        .size(11.0)
-                                                        .color(palette.muted),
+                                            let label = ui
+                                                .add(
+                                                    egui::Button::new(
+                                                        RichText::new(label_text)
+                                                            .size(12.5)
+                                                            .color(color),
+                                                    )
+                                                    .frame(false)
+                                                    .min_size(egui::vec2(0.0, 20.0)),
                                                 )
-                                                .frame(false)
-                                                .small(),
-                                            )
-                                            .on_hover_text(i18n.close_tab_tooltip())
-                                            .clicked()
+                                                .on_hover_text(tooltip);
+                                            let close = ui
+                                                .add(
+                                                    egui::Button::new(
+                                                        RichText::new(icons::X)
+                                                            .size(11.5)
+                                                            .color(palette.muted),
+                                                    )
+                                                    .frame(false)
+                                                    .min_size(egui::vec2(18.0, 18.0)),
+                                                )
+                                                .on_hover_text(i18n.close_tab_tooltip());
+                                            (label, close)
                                         })
                                         .inner
                                     });
 
-                                let close_clicked = tab.inner;
-                                let response = tab.response.interact(egui::Sense::click());
-                                response.clone().on_hover_text(tooltip);
-
-                                if close_clicked || response.clicked_by(PointerButton::Middle) {
+                                let (label, close_button) = tab.inner;
+                                if close_button.clicked() || label.clicked_by(PointerButton::Middle)
+                                {
                                     close = Some(index);
-                                } else if response.clicked() {
+                                } else if label.clicked() {
                                     activate = Some(index);
                                 }
                             }
@@ -1239,12 +1451,11 @@ impl MarkLiteApp {
         }
     }
 
-    fn show_confirmation(&mut self, ctx: &egui::Context) {
+    fn show_confirmation(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
         let Some(pending) = self.pending.clone() else {
             return;
         };
 
-        let palette = self.palette();
         let i18n = self.i18n();
         let (title, message, save_label, discard_label) = match &pending {
             PendingAction::CloseTab(id) => {
@@ -1282,55 +1493,28 @@ impl MarkLiteApp {
                 )
             }
         };
-        let mut choice = None;
 
-        let response = Modal::new(Id::unique("mdlite_unsaved_modal")).show(ctx, |ui| {
-            ui.set_min_width(450.0);
-            ui.label(RichText::new(title).size(19.0).strong().color(palette.text));
-            ui.add_space(8.0);
-            ui.label(RichText::new(message).size(14.0).color(palette.text));
-            ui.add_space(16.0);
-            ui.horizontal(|ui| {
-                let save = egui::Button::new(
-                    RichText::new(save_label)
-                        .size(13.5)
-                        .strong()
-                        .color(Color32::WHITE),
-                )
-                .fill(palette.accent_button)
-                .stroke(Stroke::NONE)
-                .corner_radius(7)
-                .min_size(egui::vec2(84.0, 30.0));
-                if ui.add(save).clicked() {
-                    choice = Some(ConfirmChoice::Save);
-                }
-                if ui
-                    .add(
-                        egui::Button::new(
-                            RichText::new(discard_label).size(13.0).color(palette.error),
-                        )
-                        .min_size(egui::vec2(84.0, 30.0)),
-                    )
-                    .clicked()
-                {
-                    choice = Some(ConfirmChoice::Discard);
-                }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui
-                        .add(egui::Button::new(i18n.cancel()).min_size(egui::vec2(64.0, 30.0)))
-                        .clicked()
-                    {
-                        choice = Some(ConfirmChoice::Cancel);
-                    }
-                });
-            });
-        });
+        let cancel_label = i18n.cancel().to_owned();
+        let result = rfd::MessageDialog::new()
+            .set_parent(frame)
+            .set_level(rfd::MessageLevel::Warning)
+            .set_title(title)
+            .set_description(message)
+            .set_buttons(rfd::MessageButtons::YesNoCancelCustom(
+                save_label.clone(),
+                discard_label.clone(),
+                cancel_label,
+            ))
+            .show();
 
-        let Some(choice) = choice else {
-            if response.should_close() {
-                self.pending = None;
+        let choice = match result {
+            rfd::MessageDialogResult::Yes => ConfirmChoice::Save,
+            rfd::MessageDialogResult::No => ConfirmChoice::Discard,
+            rfd::MessageDialogResult::Custom(text) if text == save_label => ConfirmChoice::Save,
+            rfd::MessageDialogResult::Custom(text) if text == discard_label => {
+                ConfirmChoice::Discard
             }
-            return;
+            _ => ConfirmChoice::Cancel,
         };
 
         match (pending, choice) {
@@ -1338,11 +1522,9 @@ impl MarkLiteApp {
                 self.pending = None;
             }
             (PendingAction::CloseTab(id), ConfirmChoice::Save) => {
+                self.pending = None;
                 if self.save_doc(id) {
-                    self.pending = None;
                     self.close_tab_by_id(id, ctx);
-                } else {
-                    self.pending = None;
                 }
             }
             (PendingAction::CloseTab(id), ConfirmChoice::Discard) => {
@@ -1350,12 +1532,10 @@ impl MarkLiteApp {
                 self.close_tab_by_id(id, ctx);
             }
             (PendingAction::CloseApp, ConfirmChoice::Save) => {
+                self.pending = None;
                 if self.save_all_dirty() {
-                    self.pending = None;
                     self.allow_close = true;
                     ctx.send_viewport_cmd(ViewportCommand::Close);
-                } else {
-                    self.pending = None;
                 }
             }
             (PendingAction::CloseApp, ConfirmChoice::Discard) => {
@@ -1366,46 +1546,19 @@ impl MarkLiteApp {
         }
     }
 
-    fn show_error(&mut self, ctx: &egui::Context) {
+    fn show_error(&mut self, frame: &eframe::Frame) {
         let Some(message) = self.error_message.clone() else {
             return;
         };
-        let palette = self.palette();
-        let mut close = false;
-
         let i18n = self.i18n();
-        let response = Modal::new(Id::unique("mdlite_error_modal")).show(ctx, |ui| {
-            ui.set_min_width(520.0);
-            ui.label(
-                RichText::new(i18n.error_title())
-                    .size(19.0)
-                    .strong()
-                    .color(palette.error),
-            );
-            ui.add_space(8.0);
-            ScrollArea::vertical()
-                .max_height(230.0)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    ui.label(RichText::new(message.as_str()).size(13.5));
-                });
-            ui.add_space(14.0);
-            if ui
-                .add(
-                    egui::Button::new(RichText::new(i18n.close()).color(Color32::WHITE).strong())
-                        .fill(palette.accent_button)
-                        .stroke(Stroke::NONE)
-                        .min_size(egui::vec2(72.0, 30.0)),
-                )
-                .clicked()
-            {
-                close = true;
-            }
-        });
-
-        if close || response.should_close() {
-            self.error_message = None;
-        }
+        let _ = rfd::MessageDialog::new()
+            .set_parent(frame)
+            .set_level(rfd::MessageLevel::Error)
+            .set_title(i18n.error_title())
+            .set_description(message)
+            .set_buttons(rfd::MessageButtons::OkCustom(i18n.close().to_owned()))
+            .show();
+        self.error_message = None;
     }
 
     fn show_settings(&mut self, ctx: &egui::Context) {
@@ -1552,6 +1705,19 @@ impl MarkLiteApp {
             ui.separator();
             ui.add_space(8.0);
             ui.label(RichText::new(i18n.about_description()).size(13.0));
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!("{}：", i18n.author_label()))
+                        .size(12.5)
+                        .color(palette.muted),
+                );
+                ui.hyperlink_to(
+                    format!("{} <{}>", mdlite::AUTHOR_NAME, mdlite::AUTHOR_EMAIL),
+                    format!("mailto:{}", mdlite::AUTHOR_EMAIL),
+                );
+            });
+            ui.hyperlink_to(mdlite::GITHUB_URL, mdlite::GITHUB_URL);
             ui.add_space(12.0);
             ui.label(
                 RichText::new(i18n.about_shortcuts_heading())
@@ -1606,9 +1772,15 @@ impl MarkLiteApp {
 }
 
 impl eframe::App for MarkLiteApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.update_effective_theme(&ctx);
+
+        #[cfg(target_os = "macos")]
+        {
+            self.ensure_native_menu(&ctx);
+            self.process_native_menu(&ctx);
+        }
 
         self.handle_close_request(&ctx);
         self.update_window_title(&ctx);
@@ -1653,8 +1825,8 @@ impl eframe::App for MarkLiteApp {
 
         self.show_settings(&ctx);
         self.show_about(&ctx);
-        self.show_confirmation(&ctx);
-        self.show_error(&ctx);
+        self.show_confirmation(&ctx, frame);
+        self.show_error(frame);
     }
 }
 
@@ -1785,6 +1957,67 @@ fn ensure_export_extension(path: PathBuf, extension: &str) -> PathBuf {
         Some(existing) if existing.eq_ignore_ascii_case(extension) => path,
         _ => path.with_extension(extension),
     }
+}
+
+fn load_system_font(db: &fontdb::Database, monospace: bool) -> Option<egui::FontData> {
+    let names: &[&str] = if monospace {
+        #[cfg(target_os = "macos")]
+        {
+            &["SF Mono", "Menlo", "Monaco", "Andale Mono"]
+        }
+        #[cfg(target_os = "windows")]
+        {
+            &["Cascadia Mono", "Consolas", "Courier New"]
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            &[
+                "JetBrains Mono",
+                "Noto Sans Mono",
+                "DejaVu Sans Mono",
+                "Liberation Mono",
+            ]
+        }
+    } else {
+        #[cfg(target_os = "macos")]
+        {
+            &["SF Pro Text", "SF Pro Display", "Helvetica Neue", "Arial"]
+        }
+        #[cfg(target_os = "windows")]
+        {
+            &["Segoe UI Variable Text", "Segoe UI", "Tahoma", "Arial"]
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            &["Noto Sans", "Ubuntu", "DejaVu Sans", "Liberation Sans"]
+        }
+    };
+
+    let mut families: Vec<fontdb::Family<'_>> = names
+        .iter()
+        .map(|name| fontdb::Family::Name(name))
+        .collect();
+    families.push(if monospace {
+        fontdb::Family::Monospace
+    } else {
+        fontdb::Family::SansSerif
+    });
+
+    let id = db.query(&fontdb::Query {
+        families: &families,
+        weight: fontdb::Weight::NORMAL,
+        stretch: fontdb::Stretch::Normal,
+        style: fontdb::Style::Normal,
+    })?;
+    let (source, index) = db.face_source(id)?;
+    let bytes = match source {
+        fontdb::Source::File(path) => fs::read(path).ok()?,
+        fontdb::Source::Binary(data) => data.as_ref().as_ref().to_vec(),
+        fontdb::Source::SharedFile(_, data) => data.as_ref().as_ref().to_vec(),
+    };
+    let mut font = egui::FontData::from_owned(bytes);
+    font.index = index;
+    Some(font)
 }
 
 fn paths_equal(left: Option<&Path>, right: &Path) -> bool {

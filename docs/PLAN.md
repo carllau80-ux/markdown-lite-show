@@ -29,6 +29,10 @@ MarkLite 是一个**轻量、离线优先的 Markdown 写作工具**。目标不
 - 分栏内容实时联动（滚动位置暂不同步）
 - macOS Universal `.app` 与 Linux x86_64 发布包
 - GitHub Actions 三平台构建与 GitHub Release 发布
+- 修复 macOS 标签页关闭按钮命中区域
+- macOS 原生菜单栏、About 面板、确认/错误对话框
+- 优先加载系统 UI 字体，macOS 使用系统风格配色与圆角
+- About / Help 提供作者邮箱 carllau80@gmail.com 和 GitHub 仓库链接
 - PDF 导出：A4，标题、表格、代码块、引用、任务清单、提示框、脚注、本地图片
 - Word 导出：标题、表格、超链接、引用、代码块、脚注、本地图片嵌入
 - 核心逻辑与 GUI 分离，可无界面运行导出测试

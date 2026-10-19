@@ -483,6 +483,18 @@ impl I18n {
         )
     }
 
+    pub fn github_repository(&self) -> &'static str {
+        self.t("GitHub 仓库", "GitHub Repository")
+    }
+
+    pub fn email_author(&self) -> &'static str {
+        self.t("联系作者", "Email Author")
+    }
+
+    pub fn author_label(&self) -> &'static str {
+        self.t("作者", "Author")
+    }
+
     pub fn about_shortcuts_heading(&self) -> &'static str {
         self.t("快捷键", "Shortcuts")
     }
@@ -503,9 +515,9 @@ impl I18n {
                 self.t("编辑 / 分栏 / 预览", "Edit / Split / Preview"),
             ),
             (self.shortcut("W"), self.t("关闭标签页", "Close tab")),
-            (self.shortcut("Tab"), self.t("下一个标签页", "Next tab")),
+            ("Ctrl+Tab".to_owned(), self.t("下一个标签页", "Next tab")),
             (
-                self.shortcut("Shift+Tab"),
+                "Ctrl+Shift+Tab".to_owned(),
                 self.t("上一个标签页", "Previous tab"),
             ),
         ]

@@ -3,6 +3,8 @@
 mod app;
 mod i18n;
 mod icons;
+#[cfg(target_os = "macos")]
+mod native_menu;
 mod settings;
 
 use std::path::PathBuf;

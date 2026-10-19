@@ -21,3 +21,5 @@ pub const GEAR: &str = "\u{E270}";
 pub const MARKDOWN_LOGO: &str = "\u{E508}";
 pub const PLUS: &str = "\u{E3D4}";
 pub const TRANSLATE: &str = "\u{E4A2}";
+pub const GITHUB_LOGO: &str = "\u{E576}";
+pub const ENVELOPE_SIMPLE: &str = "\u{E218}";

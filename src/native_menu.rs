@@ -1,5 +1,8 @@
 //! Native macOS application menu and About panel.
 
+use std::sync::{LazyLock, OnceLock};
+
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use eframe::egui;
 use muda::accelerator::Accelerator;
 use muda::{AboutMetadata, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu};
@@ -23,6 +26,22 @@ pub enum NativeAction {
     Quit,
     GitHub,
     Email,
+}
+
+static MENU_EVENTS: LazyLock<(Sender<MenuEvent>, Receiver<MenuEvent>)> = LazyLock::new(unbounded);
+static HANDLER_INSTALLED: OnceLock<()> = OnceLock::new();
+
+fn install_event_handler(ctx: &egui::Context) {
+    HANDLER_INSTALLED.get_or_init(|| {
+        let sender = MENU_EVENTS.0.clone();
+        let ctx = ctx.clone();
+        // Muda only delivers to either set_event_handler or its own receiver.
+        // Forward into our channel so the app can process actions.
+        MenuEvent::set_event_handler(Some(move |event| {
+            let _ = sender.send(event);
+            ctx.request_repaint();
+        }));
+    });
 }
 
 pub struct NativeMenu {
@@ -138,10 +157,7 @@ impl NativeMenu {
             .ok()?;
         menu.init_for_nsapp();
 
-        let ctx = ctx.clone();
-        MenuEvent::set_event_handler(Some(move |_| {
-            ctx.request_repaint();
-        }));
+        install_event_handler(ctx);
 
         Some(Self {
             _menu: menu,
@@ -152,7 +168,7 @@ impl NativeMenu {
 
     pub fn poll(&self) -> Vec<NativeAction> {
         let mut actions = Vec::new();
-        while let Ok(event) = MenuEvent::receiver().try_recv() {
+        while let Ok(event) = MENU_EVENTS.1.try_recv() {
             if let Some((_, action)) = self.actions.iter().find(|(id, _)| id == &event.id) {
                 actions.push(*action);
             }

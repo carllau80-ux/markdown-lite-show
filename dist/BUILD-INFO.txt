@@ -1,4 +1,4 @@
-MarkLite 0.1.1 - Windows x64 portable build
+MarkLite 0.1.2 - Windows x64 portable build
 
 File: mdlite.exe
 Target: x86_64-pc-windows-gnu (Rust 1.99.1), release profile with LTO and strip
@@ -14,6 +14,8 @@ Includes:
 - Native macOS menu bar, About panel and native prompt dialogs
 - System UI font loading and macOS native-style palette
 - Author email and GitHub repository links in About/Help
+- Remote image loading in preview and always-confirm when closing tabs
+- Fixed native menu event delivery for Help links
 
 Notes:
 - PDF export uses a locally installed Microsoft Edge or Google Chrome/Chromium.
@@ -22,4 +24,4 @@ Notes:
 - Settings are stored in %APPDATA%\MarkLite\settings.json.
 
 SHA256:
-f6dbb18fdd90b9084fc1bbcc10a606a12a0e34da222ecf58348b7a6af90977ee  mdlite.exe
+06bccd34c996f4708ff88f4122a1eae859e8ed55b2c7f03933afc066ba49a569  mdlite.exe

@@ -402,6 +402,13 @@ impl MarkLiteApp {
         self.persist_settings();
     }
 
+    fn open_external(&mut self, ctx: &egui::Context, url: &str) {
+        if let Err(error) = webbrowser::open(url) {
+            self.error_message = Some(self.i18n().external_link_failed(url, &error.to_string()));
+        }
+        ctx.request_repaint();
+    }
+
     fn uses_native_menu(&self) -> bool {
         #[cfg(target_os = "macos")]
         {
@@ -474,13 +481,10 @@ impl MarkLiteApp {
                     ctx.send_viewport_cmd(ViewportCommand::Close);
                 }
                 crate::native_menu::NativeAction::GitHub => {
-                    ctx.open_url(egui::OpenUrl::new_tab(mdlite::GITHUB_URL));
+                    self.open_external(ctx, mdlite::GITHUB_URL);
                 }
                 crate::native_menu::NativeAction::Email => {
-                    ctx.open_url(egui::OpenUrl::new_tab(format!(
-                        "mailto:{}",
-                        mdlite::AUTHOR_EMAIL
-                    )));
+                    self.open_external(ctx, &format!("mailto:{}", mdlite::AUTHOR_EMAIL));
                 }
             }
         }
@@ -1349,12 +1353,8 @@ impl MarkLiteApp {
             return;
         }
         let doc = &self.docs[index];
-        if doc.dirty {
-            self.pending = Some(PendingAction::CloseTab(doc.id));
-        } else {
-            let id = doc.id;
-            self.close_tab_by_id(id, ctx);
-        }
+        self.pending = Some(PendingAction::CloseTab(doc.id));
+        ctx.request_repaint();
     }
 
     fn close_tab_by_id(&mut self, id: u64, ctx: &egui::Context) {
@@ -1457,6 +1457,7 @@ impl MarkLiteApp {
         };
 
         let i18n = self.i18n();
+        let mut clean_close = false;
         let (title, message, save_label, discard_label) = match &pending {
             PendingAction::CloseTab(id) => {
                 let Some(index) = self.doc_index(*id) else {
@@ -1464,12 +1465,22 @@ impl MarkLiteApp {
                     return;
                 };
                 let doc = &self.docs[index];
-                (
-                    i18n.unsaved_title().to_owned(),
-                    i18n.unsaved_message(&doc.display_name(&i18n), UnsavedReason::CloseTab),
-                    i18n.save().to_owned(),
-                    i18n.discard().to_owned(),
-                )
+                if doc.dirty {
+                    (
+                        i18n.unsaved_title().to_owned(),
+                        i18n.unsaved_message(&doc.display_name(&i18n), UnsavedReason::CloseTab),
+                        i18n.save().to_owned(),
+                        i18n.discard().to_owned(),
+                    )
+                } else {
+                    clean_close = true;
+                    (
+                        i18n.close_file_title().to_owned(),
+                        i18n.close_file_message(&doc.display_name(&i18n)),
+                        i18n.close().to_owned(),
+                        String::new(),
+                    )
+                }
             }
             PendingAction::CloseApp => {
                 let dirty = self.dirty_documents();
@@ -1495,26 +1506,49 @@ impl MarkLiteApp {
         };
 
         let cancel_label = i18n.cancel().to_owned();
-        let result = rfd::MessageDialog::new()
-            .set_parent(frame)
-            .set_level(rfd::MessageLevel::Warning)
-            .set_title(title)
-            .set_description(message)
-            .set_buttons(rfd::MessageButtons::YesNoCancelCustom(
-                save_label.clone(),
-                discard_label.clone(),
-                cancel_label,
-            ))
-            .show();
+        let result = if clean_close {
+            rfd::MessageDialog::new()
+                .set_parent(frame)
+                .set_level(rfd::MessageLevel::Info)
+                .set_title(title)
+                .set_description(message)
+                .set_buttons(rfd::MessageButtons::OkCancelCustom(
+                    save_label.clone(),
+                    cancel_label,
+                ))
+                .show()
+        } else {
+            rfd::MessageDialog::new()
+                .set_parent(frame)
+                .set_level(rfd::MessageLevel::Warning)
+                .set_title(title)
+                .set_description(message)
+                .set_buttons(rfd::MessageButtons::YesNoCancelCustom(
+                    save_label.clone(),
+                    discard_label.clone(),
+                    cancel_label,
+                ))
+                .show()
+        };
 
-        let choice = match result {
-            rfd::MessageDialogResult::Yes => ConfirmChoice::Save,
-            rfd::MessageDialogResult::No => ConfirmChoice::Discard,
-            rfd::MessageDialogResult::Custom(text) if text == save_label => ConfirmChoice::Save,
-            rfd::MessageDialogResult::Custom(text) if text == discard_label => {
-                ConfirmChoice::Discard
+        let choice = if clean_close {
+            match result {
+                rfd::MessageDialogResult::Ok => ConfirmChoice::Discard,
+                rfd::MessageDialogResult::Custom(text) if text == save_label => {
+                    ConfirmChoice::Discard
+                }
+                _ => ConfirmChoice::Cancel,
             }
-            _ => ConfirmChoice::Cancel,
+        } else {
+            match result {
+                rfd::MessageDialogResult::Yes => ConfirmChoice::Save,
+                rfd::MessageDialogResult::No => ConfirmChoice::Discard,
+                rfd::MessageDialogResult::Custom(text) if text == save_label => ConfirmChoice::Save,
+                rfd::MessageDialogResult::Custom(text) if text == discard_label => {
+                    ConfirmChoice::Discard
+                }
+                _ => ConfirmChoice::Cancel,
+            }
         };
 
         match (pending, choice) {
@@ -1676,6 +1710,7 @@ impl MarkLiteApp {
         let palette = self.palette();
         let i18n = self.i18n();
         let mut close = false;
+        let mut external_url: Option<String> = None;
 
         let response = Modal::new(Id::unique("mdlite_about_modal")).show(ctx, |ui| {
             ui.set_min_width(520.0);
@@ -1712,12 +1747,20 @@ impl MarkLiteApp {
                         .size(12.5)
                         .color(palette.muted),
                 );
-                ui.hyperlink_to(
-                    format!("{} <{}>", mdlite::AUTHOR_NAME, mdlite::AUTHOR_EMAIL),
-                    format!("mailto:{}", mdlite::AUTHOR_EMAIL),
-                );
+                if ui
+                    .link(format!(
+                        "{} <{}>",
+                        mdlite::AUTHOR_NAME,
+                        mdlite::AUTHOR_EMAIL
+                    ))
+                    .clicked()
+                {
+                    external_url = Some(format!("mailto:{}", mdlite::AUTHOR_EMAIL));
+                }
             });
-            ui.hyperlink_to(mdlite::GITHUB_URL, mdlite::GITHUB_URL);
+            if ui.link(mdlite::GITHUB_URL).clicked() {
+                external_url = Some(mdlite::GITHUB_URL.to_owned());
+            }
             ui.add_space(12.0);
             ui.label(
                 RichText::new(i18n.about_shortcuts_heading())
@@ -1767,6 +1810,9 @@ impl MarkLiteApp {
 
         if close || response.should_close() {
             self.about_open = false;
+        }
+        if let Some(url) = external_url {
+            self.open_external(ctx, &url);
         }
     }
 }

@@ -238,6 +238,24 @@ impl I18n {
         }
     }
 
+    pub fn close_file_title(&self) -> &'static str {
+        self.t("关闭文件", "Close file")
+    }
+
+    pub fn close_file_message(&self, name: &str) -> String {
+        match self.language {
+            Language::Zh => format!("确定要关闭“{name}”吗？"),
+            Language::En => format!("Close “{name}”?"),
+        }
+    }
+
+    pub fn external_link_failed(&self, url: &str, error: &str) -> String {
+        match self.language {
+            Language::Zh => format!("无法打开链接：{url}\n\n{error}"),
+            Language::En => format!("Could not open link: {url}\n\n{error}"),
+        }
+    }
+
     pub fn unsaved_tabs_title(&self) -> &'static str {
         self.t("有未保存的标签页", "Unsaved tabs")
     }
@@ -540,6 +558,16 @@ mod tests {
         assert!(zh.contains("关闭标签页前"));
         let en = I18n::new(Language::En).unsaved_message("note.md", UnsavedReason::CloseTab);
         assert!(en.contains("before closing this tab"));
+    }
+
+    #[test]
+    fn formats_clean_close_confirmation() {
+        let zh = I18n::new(Language::Zh);
+        assert_eq!(zh.close_file_title(), "关闭文件");
+        assert!(zh.close_file_message("a.md").contains("a.md"));
+        let en = I18n::new(Language::En);
+        assert_eq!(en.close_file_title(), "Close file");
+        assert_eq!(en.close_file_message("a.md"), "Close “a.md”?");
     }
 
     #[test]

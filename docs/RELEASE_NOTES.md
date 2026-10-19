@@ -4,18 +4,19 @@
 
 ## 下载
 
-- **Windows x64**：`MarkLite-0.1.1-windows-x64.zip`
-- **Linux x86_64**：`MarkLite-0.1.1-linux-x86_64.tar.gz`
-- **macOS（Universal / Intel + Apple Silicon）**：`MarkLite-0.1.1-macos-universal.zip`
+- **Windows x64**：`MarkLite-0.1.2-windows-x64.zip`
+- **Linux x86_64**：`MarkLite-0.1.2-linux-x86_64.tar.gz`
+- **macOS（Universal / Intel + Apple Silicon）**：`MarkLite-0.1.2-macos-universal.zip`
 - `SHA256SUMS.txt`：所有发布文件的校验和
 
-## v0.1.1 更新
+## v0.1.2 更新
 
-- 修复 macOS 上标签页关闭图标点击无效
-- macOS 使用系统原生菜单栏、原生 About 面板和原生确认/错误对话框
-- 界面优先使用系统 UI 字体，macOS 使用系统外观配色和圆角
-- About / Help 增加作者邮箱与 GitHub 仓库链接
-- 标签页切换快捷键改为 `Ctrl+Tab`（避免与 macOS `Cmd+Tab` 冲突）
+- 修复 macOS 原生菜单事件未送达的问题，GitHub / 联系作者等菜单项现已正常工作
+- 联系作者、GitHub 链接改为直接调用系统默认浏览器/邮件客户端
+- 预览支持远程图片加载；本地与远程图片均可显示
+- 修复标签页关闭按钮的点击冲突（macOS）
+- 关闭任意 Markdown 标签页（包括未修改文件）都会先弹出确认
+- 保留 v0.1.1 的原生 macOS 菜单、About、提示框与系统字体
 
 ## 功能
 
@@ -37,7 +38,7 @@
 ### Linux
 
 ```bash
-tar -xzf MarkLite-0.1.1-linux-x86_64.tar.gz
+tar -xzf MarkLite-0.1.2-linux-x86_64.tar.gz
 cd MarkLite
 ./mdlite                     # 直接运行
 ./install.sh                 # 可选：安装到 ~/.local

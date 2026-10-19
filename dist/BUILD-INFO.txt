@@ -1,0 +1,22 @@
+MarkLite 0.1.0 - Windows x64 portable build
+
+File: mdlite.exe
+Target: x86_64-pc-windows-gnu (Rust 1.99.1), release profile with LTO and strip
+Requires: Windows 10/11 x64
+Installer: none (portable single-file executable)
+
+Includes:
+- Multi-file tabs, multi-select open, dirty-state close/quit prompts
+- Split editor with live preview
+- Chinese/English UI, system/light/dark appearance, 5 accent colors
+- Menu bar and Phosphor icons
+- PDF and Word export
+
+Notes:
+- PDF export uses a locally installed Microsoft Edge or Google Chrome/Chromium.
+- Word export generates .docx directly and does not require Office.
+- This unsigned build may trigger a SmartScreen warning.
+- Settings are stored in %APPDATA%\MarkLite\settings.json.
+
+SHA256:
+c6611400370022d5eb419d4c4623cf0cd73d697f70e55334e87c96714f0ee4d3  mdlite.exe

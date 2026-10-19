@@ -1,0 +1,83 @@
+[package]
+name = "mdlite"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "MarkLite - a lightweight cross-platform Markdown editor with PDF and Word export"
+license = "MIT"
+
+[lib]
+name = "mdlite"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mdlite"
+path = "src/main.rs"
+required-features = ["gui"]
+
+[[example]]
+name = "export_demo"
+path = "examples/export_demo.rs"
+
+[features]
+default = ["gui"]
+gui = [
+    "dep:atomicwrites",
+    "dep:directories",
+    "dep:eframe",
+    "dep:egui_commonmark",
+    "dep:egui_extras",
+    "dep:encoding_rs",
+    "dep:rfd",
+    "dep:serde",
+    "dep:serde_json",
+]
+
+[dependencies]
+comrak = { version = "0.56", default-features = false }
+docx-rs = "0.4.22"
+image = { version = "0.25", default-features = false, features = [
+    "png",
+    "jpeg",
+    "gif",
+    "webp",
+] }
+percent-encoding = "2"
+tempfile = "3"
+thiserror = "2"
+url = "2"
+wait-timeout = "0.2"
+
+# GUI-only dependencies
+atomicwrites = { version = "0.4.4", optional = true }
+directories = { version = "6", optional = true }
+eframe = { version = "0.37", optional = true, default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "x11",
+    "clipboard",
+    "links",
+    "system_fonts",
+] }
+egui_commonmark = { version = "0.26", optional = true }
+egui_extras = { version = "0.37", optional = true, default-features = false, features = [
+    "image",
+    "file",
+] }
+encoding_rs = { version = "0.8", optional = true }
+rfd = { version = "0.17.2", optional = true, default-features = false, features = [
+    "xdg-portal",
+    "common-controls-v6",
+] }
+serde = { version = "1", optional = true, features = ["derive"] }
+serde_json = { version = "1", optional = true }
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[build-dependencies]
+winresource = "0.1.34"

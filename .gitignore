@@ -1,0 +1,5 @@
+/target
+/output
+*.pdf
+*.docx
+.DS_Store

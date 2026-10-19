@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=MarkLite
+GenericName=Markdown Editor
+Comment=Lightweight Markdown editor with PDF and Word export
+Name[zh_CN]=MarkLite Markdown 编辑器
+Comment[zh_CN]=轻量 Markdown 编辑器，支持 PDF 与 Word 导出
+Exec=mdlite %F
+TryExec=mdlite
+Icon=marklite
+Terminal=false
+Categories=Office;TextEditor;
+MimeType=text/markdown;text/x-markdown;
+StartupWMClass=mdlite

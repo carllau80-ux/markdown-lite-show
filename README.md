@@ -6,6 +6,18 @@ Windows 优先，代码同时按 Windows / macOS / Linux 跨平台方式组织�
 
 ![MarkLite 主界面](docs/screenshot.png)
 
+## 下载
+
+GitHub Releases 提供三个平台的构建：
+
+- **Windows x64**：`MarkLite-0.1.0-windows-x64.zip`
+- **Linux x86_64**：`MarkLite-0.1.0-linux-x86_64.tar.gz`
+- **macOS Universal（Intel + Apple Silicon）**：`MarkLite-0.1.0-macos-universal.zip`
+
+下载页：<https://github.com/carllau80-ux/markdown-lite-show/releases/latest>
+
+页面中的 `SHA256SUMS.txt` 可用于校验。仓库内也保留了 Windows 便携版 `dist/mdlite.exe` 和 Linux 压缩包，方便直接获取。
+
 ## 功能
 
 - **三种视图**：编辑、左右分栏、格式化预览（快捷键 `Ctrl+1/2/3`）；分栏左侧输入会实时联动右侧预览
@@ -26,17 +38,13 @@ Windows 优先，代码同时按 Windows / macOS / Linux 跨平台方式组织�
 
 | 平台 | 状态 |
 | --- | --- |
-| Windows | 已交叉编译 Windows x64 便携版，并通过 PE 资源/导入检查；待 Windows 实机验收 |
-| Linux | GUI、编辑、预览、导出、中英文与主题切换已在开发机实测 |
-| macOS | 代码路径已保留，尚未实机验证与打包 |
+| Windows | 已生成 x64 便携版并通过 PE 资源/导入检查；待 Windows 实机验收 |
+| Linux | 已生成 x86_64 发布包，GUI 与主要工作流在开发机实测 |
+| macOS | CI 构建 Universal `.app`（Intel + Apple Silicon）；待 macOS 实机验收 |
 
-**Windows 可执行文件**
+Windows 便携版位于 `dist\mdlite.exe` 与 `target\release\mdlite.exe`；Linux 包位于 `dist\MarkLite-0.1.0-linux-x86_64.tar.gz`。
 
-- 便捷路径：`dist\mdlite.exe`
-- 同时复制到：`target\release\mdlite.exe`
-- 校验与构建说明：`dist\BUILD-INFO.txt`、`dist\SHA256SUMS.txt`
-
-这是无安装程序、未签名的便携版，可能触发 SmartScreen 提示。PDF 导出需要本机 Edge/Chrome（Windows 10/11 通常自带 Edge）；Word 导出不需要 Office。
+三个平台的发布包由 GitHub Actions 在标签 `v*` 上自动构建：Windows / Linux / macOS Universal。macOS 与 Windows 包目前未签名，首次启动可能遇到系统安全提示。PDF 导出需要本机 Edge/Chrome/Chromium；Word 导出不需要 Office。
 
 ## Windows 构建
 
@@ -91,7 +99,7 @@ cargo build --release
 | `Ctrl+Shift+Tab` | 上一个标签页 |
 | `Ctrl+Z / Ctrl+Y` | 撤销 / 重做（编辑器内置） |
 
-macOS 上 `Ctrl` 对应 `Command`。
+macOS 上快捷键显示并使用 `Cmd`。
 
 ## 多标签页与分栏
 
@@ -102,6 +110,35 @@ macOS 上 `Ctrl` 对应 `Command`。
 - 关闭有未保存修改的标签会询问保存；关闭窗口时若有多个未保存标签，可选择“全部保存 / 全部不保存 / 取消”。
 - 关闭最后一个标签会关闭窗口。
 - 分栏模式的内容是**实时联动**的；编辑器与预览目前各自独立滚动，尚未实现滚动位置同步。
+
+## macOS 与 Linux 构建
+
+### Linux
+
+```bash
+sudo apt-get install libx11-dev libxkbcommon-dev libxi-dev libxrandr-dev \
+  libxcursor-dev libxinerama-dev libgl1-mesa-dev libegl1-mesa-dev
+cargo build --release
+bash scripts/package-linux.sh
+```
+
+Linux 版使用 X11 / XWayland 和 OpenGL，文件对话框依赖 XDG Desktop Portal。压缩包内提供 `install.sh`，可安装到 `~/.local`。
+
+### macOS
+
+```bash
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+cargo build --release --target aarch64-apple-darwin
+cargo build --release --target x86_64-apple-darwin
+mkdir -p target/universal-apple-darwin/release
+lipo -create \
+  target/aarch64-apple-darwin/release/mdlite \
+  target/x86_64-apple-darwin/release/mdlite \
+  -output target/universal-apple-darwin/release/mdlite
+bash scripts/package-macos.sh 0.1.0 target/universal-apple-darwin/release/mdlite
+```
+
+脚本会生成带图标和 `Info.plist` 的 `MarkLite.app`，并做 ad-hoc 签名。正式分发仍建议使用 Developer ID 签名与公证。
 
 ## 导出说明
 

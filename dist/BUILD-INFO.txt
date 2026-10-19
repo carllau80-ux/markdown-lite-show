@@ -19,4 +19,4 @@ Notes:
 - Settings are stored in %APPDATA%\MarkLite\settings.json.
 
 SHA256:
-c6611400370022d5eb419d4c4623cf0cd73d697f70e55334e87c96714f0ee4d3  mdlite.exe
+7451430fc38e80e6f48d92479e2be1adbe1af8a21e43c094edf19f230865ff12  mdlite.exe

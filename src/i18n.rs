@@ -88,22 +88,43 @@ impl I18n {
         self.t("预览", "Preview")
     }
 
-    pub fn tooltip_new(&self) -> &'static str {
-        self.t("新建文档  Ctrl+N", "New document  Ctrl+N")
+    pub fn modifier_key(&self) -> &'static str {
+        if cfg!(target_os = "macos") {
+            "Cmd"
+        } else {
+            "Ctrl"
+        }
     }
 
-    pub fn tooltip_open(&self) -> &'static str {
-        self.t("打开 Markdown 文件  Ctrl+O", "Open a Markdown file  Ctrl+O")
+    pub fn shortcut(&self, keys: &str) -> String {
+        format!("{}+{keys}", self.modifier_key())
     }
 
-    pub fn tooltip_save(&self) -> &'static str {
-        self.t("保存  Ctrl+S", "Save  Ctrl+S")
+    pub fn tooltip_new(&self) -> String {
+        format!(
+            "{}  {}",
+            self.t("新建文档", "New document"),
+            self.shortcut("N")
+        )
     }
 
-    pub fn tooltip_save_as(&self) -> &'static str {
-        self.t(
-            "另存为 Markdown  Ctrl+Shift+S",
-            "Save as Markdown  Ctrl+Shift+S",
+    pub fn tooltip_open(&self) -> String {
+        format!(
+            "{}  {}",
+            self.t("打开 Markdown 文件", "Open a Markdown file"),
+            self.shortcut("O")
+        )
+    }
+
+    pub fn tooltip_save(&self) -> String {
+        format!("{}  {}", self.save(), self.shortcut("S"))
+    }
+
+    pub fn tooltip_save_as(&self) -> String {
+        format!(
+            "{}  {}",
+            self.t("另存为 Markdown", "Save as Markdown"),
+            self.shortcut("Shift+S")
         )
     }
 
@@ -270,12 +291,12 @@ impl I18n {
         self.t("退出", "Exit")
     }
 
-    pub fn new_tab_tooltip(&self) -> &'static str {
-        self.t("新建标签页  Ctrl+N", "New tab  Ctrl+N")
+    pub fn new_tab_tooltip(&self) -> String {
+        format!("{}  {}", self.new_tab(), self.shortcut("N"))
     }
 
-    pub fn close_tab_tooltip(&self) -> &'static str {
-        self.t("关闭标签页  Ctrl+W", "Close tab  Ctrl+W")
+    pub fn close_tab_tooltip(&self) -> String {
+        format!("{}  {}", self.close_tab(), self.shortcut("W"))
     }
 
     pub fn tab_untitled(&self, number: u64) -> String {
@@ -466,19 +487,27 @@ impl I18n {
         self.t("快捷键", "Shortcuts")
     }
 
-    pub fn about_shortcuts(&self) -> [(&'static str, &'static str); 8] {
-        [
-            ("Ctrl+N", self.t("新建", "New")),
-            ("Ctrl+O", self.t("打开", "Open")),
-            ("Ctrl+S", self.t("保存", "Save")),
-            ("Ctrl+Shift+S", self.t("另存为", "Save as")),
+    pub fn about_shortcuts(&self) -> Vec<(String, &'static str)> {
+        vec![
+            (self.shortcut("N"), self.t("新建", "New")),
+            (self.shortcut("O"), self.t("打开", "Open")),
+            (self.shortcut("S"), self.t("保存", "Save")),
+            (self.shortcut("Shift+S"), self.t("另存为", "Save as")),
             (
-                "Ctrl+1 / 2 / 3",
+                format!(
+                    "{} / {} / {}",
+                    self.shortcut("1"),
+                    self.shortcut("2"),
+                    self.shortcut("3")
+                ),
                 self.t("编辑 / 分栏 / 预览", "Edit / Split / Preview"),
             ),
-            ("Ctrl+W", self.t("关闭标签页", "Close tab")),
-            ("Ctrl+Tab", self.t("下一个标签页", "Next tab")),
-            ("Ctrl+Shift+Tab", self.t("上一个标签页", "Previous tab")),
+            (self.shortcut("W"), self.t("关闭标签页", "Close tab")),
+            (self.shortcut("Tab"), self.t("下一个标签页", "Next tab")),
+            (
+                self.shortcut("Shift+Tab"),
+                self.t("上一个标签页", "Previous tab"),
+            ),
         ]
     }
 }

@@ -483,6 +483,11 @@ impl MarkLiteApp {
         let palette = self.palette();
         let i18n = self.i18n();
         let ctx = ui.ctx().clone();
+        let shortcut_new = i18n.shortcut("N");
+        let shortcut_open = i18n.shortcut("O");
+        let shortcut_save = i18n.shortcut("S");
+        let shortcut_save_as = i18n.shortcut("Shift+S");
+        let shortcut_close_tab = i18n.shortcut("W");
 
         Panel::top("mdlite_toolbar")
             .frame(
@@ -509,33 +514,40 @@ impl MarkLiteApp {
                     ui.add_space(10.0);
 
                     ui.menu_button(icon_text(icons::FILES, i18n.file_menu()), |ui| {
-                        if menu_button(ui, icons::FILE_PLUS, i18n.new_tab(), Some("Ctrl+N"))
+                        if menu_button(ui, icons::FILE_PLUS, i18n.new_tab(), Some(&shortcut_new))
                             .clicked()
                         {
                             self.add_untitled_document();
                             ui.close();
                         }
-                        if menu_button(ui, icons::FOLDER_OPEN, i18n.open(), Some("Ctrl+O"))
+                        if menu_button(ui, icons::FOLDER_OPEN, i18n.open(), Some(&shortcut_open))
                             .clicked()
                         {
                             self.open_dialog();
                             ui.close();
                         }
                         ui.separator();
-                        if menu_button(ui, icons::FLOPPY_DISK, i18n.save(), Some("Ctrl+S"))
+                        if menu_button(ui, icons::FLOPPY_DISK, i18n.save(), Some(&shortcut_save))
                             .clicked()
                         {
                             self.save_active();
                             ui.close();
                         }
-                        if menu_button(ui, icons::COPY_SIMPLE, i18n.save_as(), Some("Ctrl+Shift+S"))
-                            .clicked()
+                        if menu_button(
+                            ui,
+                            icons::COPY_SIMPLE,
+                            i18n.save_as(),
+                            Some(&shortcut_save_as),
+                        )
+                        .clicked()
                         {
                             self.save_active_as();
                             ui.close();
                         }
                         ui.separator();
-                        if menu_button(ui, icons::X, i18n.close_tab(), Some("Ctrl+W")).clicked() {
+                        if menu_button(ui, icons::X, i18n.close_tab(), Some(&shortcut_close_tab))
+                            .clicked()
+                        {
                             self.request_close_tab(self.active, &ctx);
                             ui.close();
                         }

@@ -27,6 +27,8 @@ MarkLite 是一个**轻量、离线优先的 Markdown 写作工具**。目标不
 - 多文件标签页：多选/拖入打开、路径去重、独立状态、关闭确认、退出时全部保存
 - 菜单栏与 Phosphor 图标（文件 / 查看 / 导出 / 帮助）
 - 分栏内容实时联动（滚动位置暂不同步）
+- macOS Universal `.app` 与 Linux x86_64 发布包
+- GitHub Actions 三平台构建与 GitHub Release 发布
 - PDF 导出：A4，标题、表格、代码块、引用、任务清单、提示框、脚注、本地图片
 - Word 导出：标题、表格、超链接、引用、代码块、脚注、本地图片嵌入
 - 核心逻辑与 GUI 分离，可无界面运行导出测试
@@ -97,11 +99,12 @@ MarkLite 是一个**轻量、离线优先的 Markdown 写作工具**。目标不
 
 ### v0.4 — 平台交付
 
-- [ ] Windows 安装包（Inno Setup 或 WiX）、便携版 zip
+- [x] Windows / Linux / macOS 便携版自动构建
+- [ ] Windows 安装包（Inno Setup 或 WiX）
 - [ ] `.md` 文件关联与“打开方式”注册
-- [ ] Windows 代码签名（减少 SmartScreen 提示）
-- [ ] macOS `.app` 打包、公证与图标
-- [ ] Linux `.deb` / AppImage（含 Wayland 支持）
+- [ ] Windows / macOS 代码签名与公证
+- [x] macOS Universal `.app` 打包与 ad-hoc 签名
+- [ ] Linux `.deb` / AppImage（含原生 Wayland 支持）
 
 ### v1.0 — 生态与自动化（探索）
 
@@ -161,6 +164,8 @@ MarkLite 是一个**轻量、离线优先的 Markdown 写作工具**。目标不
 - [ ] 设置重启后保持；配置损坏时回退到默认值
 - [ ] 深色/浅色主题可读性正常
 - [ ] Windows 10/11 实机验证安装、文件关联、DPI 缩放、中文输入法
+- [ ] macOS Intel / Apple Silicon 实机启动、文件对话框与 PDF/Word 导出
+- [ ] Linux 主流桌面（GNOME/KDE）文件对话框、XWayland 与分发包测试
 - [ ] 大文件（如 1 MB Markdown）编辑与预览不明显卡顿
 - [ ] `cargo test`、`cargo test --lib --no-default-features` 全部通过
 - [ ] 发布包包含图标、版本信息与 License

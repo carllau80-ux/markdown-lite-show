@@ -3,3 +3,6 @@
 *.pdf
 *.docx
 .DS_Store
+/dist/linux/
+/dist/macos/
+/dist/windows/

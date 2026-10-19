@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Read version
+        shell: bash
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Build
+        run: cargo build --release
+      - name: Package
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/package-windows.ps1 -Version $env:VERSION
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: dist/MarkLite-*-windows-x64.zip
+          if-no-files-found: error
+
+  linux:
+    name: Linux x86_64
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxkbcommon-dev libxi-dev libxrandr-dev libxcursor-dev \
+            libxinerama-dev libgl1-mesa-dev libegl1-mesa-dev libdbus-1-dev
+      - name: Read version
+        shell: bash
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Test core
+        run: cargo test --lib --no-default-features
+      - name: Build
+        run: cargo build --release
+      - name: Package
+        run: bash scripts/package-linux.sh "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: dist/MarkLite-*-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Read version
+        shell: bash
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Build arm64
+        run: cargo build --release --target aarch64-apple-darwin
+      - name: Build x86_64
+        run: cargo build --release --target x86_64-apple-darwin
+      - name: Create universal binary
+        run: |
+          mkdir -p target/universal-apple-darwin/release
+          lipo -create \
+            target/aarch64-apple-darwin/release/mdlite \
+            target/x86_64-apple-darwin/release/mdlite \
+            -output target/universal-apple-darwin/release/mdlite
+          file target/universal-apple-darwin/release/mdlite
+      - name: Package app
+        run: bash scripts/package-macos.sh "$VERSION" target/universal-apple-darwin/release/mdlite
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: dist/MarkLite-*-macos-universal.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+      - windows
+      - linux
+      - macos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: MarkLite ${{ github.ref_name }}
+          body_path: docs/RELEASE_NOTES.md
+          files: artifacts/*
+          fail_on_unmatched_files: true
+          make_latest: true

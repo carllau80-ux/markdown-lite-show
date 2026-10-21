@@ -285,6 +285,77 @@ impl I18n {
         self.t("文件", "File")
     }
 
+    pub fn edit_menu(&self) -> &'static str {
+        self.t("编辑", "Edit")
+    }
+
+    pub fn copy(&self) -> &'static str {
+        self.t("复制", "Copy")
+    }
+
+    pub fn cut(&self) -> &'static str {
+        self.t("剪切", "Cut")
+    }
+
+    pub fn paste(&self) -> &'static str {
+        self.t("粘贴", "Paste")
+    }
+
+    pub fn find(&self) -> &'static str {
+        self.t("查找", "Find")
+    }
+
+    pub fn replace(&self) -> &'static str {
+        self.t("替换", "Replace")
+    }
+
+    pub fn find_hint(&self) -> &'static str {
+        self.t("查找内容", "Find")
+    }
+
+    pub fn replace_hint(&self) -> &'static str {
+        self.t("替换为", "Replace with")
+    }
+
+    pub fn find_previous(&self) -> &'static str {
+        self.t("上一个", "Previous")
+    }
+
+    pub fn find_next(&self) -> &'static str {
+        self.t("下一个", "Next")
+    }
+
+    pub fn replace_all(&self) -> &'static str {
+        self.t("全部替换", "Replace All")
+    }
+
+    pub fn no_matches(&self) -> &'static str {
+        self.t("无匹配", "No matches")
+    }
+
+    pub fn recent_files(&self) -> &'static str {
+        self.t("最近打开", "Recent Files")
+    }
+
+    pub fn clear_recent_files(&self) -> &'static str {
+        self.t("清除历史记录", "Clear Recent Files")
+    }
+
+    pub fn no_recent_files(&self) -> &'static str {
+        self.t("暂无历史记录", "No recent files")
+    }
+
+    pub fn recent_cleared(&self) -> &'static str {
+        self.t("已清除打开历史", "Recent files cleared")
+    }
+
+    pub fn clipboard_failed(&self, error: &str) -> String {
+        match self.language {
+            Language::Zh => format!("读取剪贴板失败：{error}"),
+            Language::En => format!("Could not read the clipboard: {error}"),
+        }
+    }
+
     pub fn view_menu(&self) -> &'static str {
         self.t("查看", "View")
     }
@@ -505,16 +576,24 @@ impl I18n {
         self.t("GitHub 仓库", "GitHub Repository")
     }
 
-    pub fn email_author(&self) -> &'static str {
-        self.t("联系作者", "Email Author")
-    }
-
     pub fn author_label(&self) -> &'static str {
         self.t("作者", "Author")
     }
 
     pub fn about_shortcuts_heading(&self) -> &'static str {
         self.t("快捷键", "Shortcuts")
+    }
+
+    pub fn find_shortcut_label(&self) -> String {
+        self.shortcut("F")
+    }
+
+    pub fn replace_shortcut_label(&self) -> String {
+        if cfg!(target_os = "macos") {
+            format!("{}+Option+F", self.modifier_key())
+        } else {
+            self.shortcut("H")
+        }
     }
 
     pub fn about_shortcuts(&self) -> Vec<(String, &'static str)> {
@@ -533,6 +612,8 @@ impl I18n {
                 self.t("编辑 / 分栏 / 预览", "Edit / Split / Preview"),
             ),
             (self.shortcut("W"), self.t("关闭标签页", "Close tab")),
+            (self.find_shortcut_label(), self.t("查找", "Find")),
+            (self.replace_shortcut_label(), self.t("替换", "Replace")),
             ("Ctrl+Tab".to_owned(), self.t("下一个标签页", "Next tab")),
             (
                 "Ctrl+Shift+Tab".to_owned(),

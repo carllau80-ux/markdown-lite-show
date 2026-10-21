@@ -10,9 +10,9 @@ Windows 优先，代码同时按 Windows / macOS / Linux 跨平台方式组织�
 
 GitHub Releases 提供三个平台的构建：
 
-- **Windows x64**：`MarkLite-0.1.3-windows-x64.zip`
-- **Linux x86_64**：`MarkLite-0.1.3-linux-x86_64.tar.gz`
-- **macOS Universal（Intel + Apple Silicon）**：`MarkLite-0.1.3-macos-universal.zip`
+- **Windows x64**：`MarkLite-0.1.4-windows-x64.zip`
+- **Linux x86_64**：`MarkLite-0.1.4-linux-x86_64.tar.gz`
+- **macOS Universal（Intel + Apple Silicon）**：`MarkLite-0.1.4-macos-universal.zip`
 
 下载页：<https://github.com/carllau80-ux/markdown-lite-show/releases/latest>
 
@@ -29,7 +29,10 @@ GitHub Releases 提供三个平台的构建：
 - **Word 导出**：生成标准 `.docx`，无需安装 Office；支持内嵌本地图片、表格、超链接、代码块、脚注
 - **中英文界面**：右上角一键切换 `中文 / EN`，选择会自动保存
 - **主题与主题色**：跟随系统 / 浅色 / 深色，5 套主题色；默认跟随系统
-- **菜单与图标**：文件 / 查看 / 导出 / 帮助菜单及工具栏图标（Phosphor 图标字体）
+- **编辑菜单**：复制、剪切、粘贴、查找与替换（`Ctrl+C / X / V / F / H`）；替换条支持上一个/下一个、单个替换和全部替换
+- **最近打开**：文件菜单保留最近 10 个 Markdown 记录，可快速重新打开或一键清除
+- **等宽双栏**：编辑区与预览区始终使用相同大小的卡片，展开查找/替换条时也不会改变两侧尺寸
+- **菜单与图标**：文件 / 编辑 / 查看 / 导出 / 帮助菜单及工具栏图标（Phosphor 图标字体）
 - **macOS 原生集成**：系统菜单栏、原生关于面板与原生确认/错误提示框；界面优先使用系统 UI 字体和 macOS 风格配色
 - **标签页关闭修复**：关闭按钮独立命中区域，避免与标签点击互相抢占
 - **链接与图片**：预览支持本地和远程图片；点击链接使用系统默认浏览器打开
@@ -39,7 +42,7 @@ GitHub Releases 提供三个平台的构建：
 
 ## 当前状态
 
-`v0.1.3` 是当前版本：
+`v0.1.4` 是当前版本：
 
 | 平台 | 状态 |
 | --- | --- |
@@ -47,7 +50,7 @@ GitHub Releases 提供三个平台的构建：
 | Linux | 已生成 x86_64 发布包，GUI 与主要工作流在开发机实测 |
 | macOS | CI 构建 Universal `.app`（Intel + Apple Silicon）；待 macOS 实机验收 |
 
-Windows 便携版位于 `dist\mdlite.exe` 与 `target\release\mdlite.exe`；Linux 包位于 `dist\MarkLite-0.1.3-linux-x86_64.tar.gz`。
+Windows 便携版位于 `dist\mdlite.exe` 与 `target\release\mdlite.exe`；Linux 包位于 `dist\MarkLite-0.1.4-linux-x86_64.tar.gz`。
 
 三个平台的发布包由 GitHub Actions 在标签 `v*` 上自动构建：Windows / Linux / macOS Universal。macOS 与 Windows 包目前未签名，首次启动可能遇到系统安全提示。PDF 导出需要本机 Edge/Chrome/Chromium；Word 导出不需要 Office。
 
@@ -103,8 +106,11 @@ cargo build --release
 | `Ctrl+Tab` | 下一个标签页 |
 | `Ctrl+Shift+Tab` | 上一个标签页 |
 | `Ctrl+Z / Ctrl+Y` | 撤销 / 重做（编辑器内置） |
+| `Ctrl+C / Ctrl+X / Ctrl+V` | 复制 / 剪切 / 粘贴（编辑区） |
+| `Ctrl+F` | 查找 |
+| `Ctrl+H` | 查找并替换 |
 
-macOS 上快捷键显示并使用 `Cmd`。
+macOS 上快捷键使用 `Cmd`；替换快捷键为 `Cmd+Option+F`。
 
 ## 多标签页与分栏
 
@@ -140,7 +146,7 @@ lipo -create \
   target/aarch64-apple-darwin/release/mdlite \
   target/x86_64-apple-darwin/release/mdlite \
   -output target/universal-apple-darwin/release/mdlite
-bash scripts/package-macos.sh 0.1.3 target/universal-apple-darwin/release/mdlite
+bash scripts/package-macos.sh 0.1.4 target/universal-apple-darwin/release/mdlite
 ```
 
 脚本会生成带图标和 `Info.plist` 的 `MarkLite.app`，并做 ad-hoc 签名。正式分发仍建议使用 Developer ID 签名与公证。
@@ -219,7 +225,7 @@ cargo run --example export_demo --no-default-features
 
 示例输出位于 `output/sample.pdf` 与 `output/sample.docx`。
 
-Linux 开发环境需要 X11（或 XWayland）与可用的 OpenGL 驱动；文件对话框使用 XDG Portal。macOS / Linux 的打包与签名尚未完成。
+Linux 开发环境需要 X11（或 XWayland）与可用的 OpenGL 驱动；文件对话框使用 XDG Portal。macOS 公证与 Windows 代码签名尚未完成。
 
 从 Linux 交叉编译 Windows x64：
 
@@ -232,14 +238,13 @@ cargo build --release --target x86_64-pc-windows-gnu
 
 ## 路线图
 
-短期优先事项：自动保存与崩溃恢复、最近文件与会话恢复、查找替换、分栏滚动同步、原生 Word 列表、导出样式模板、Windows 安装包与文件关联。
+短期优先事项：自动保存与崩溃恢复、会话恢复、分栏滚动同步、原生 Word 列表、导出样式模板、Windows 安装包与文件关联。
 
 完整规划与其它建议见 [docs/PLAN.md](docs/PLAN.md)。
 
 ## 作者
 
 - Carl Lau
-- 邮箱：<carllau80@gmail.com>
 - GitHub：<https://github.com/carllau80-ux/markdown-lite-show>
 
 ![关于窗口](docs/screenshot-about.png)

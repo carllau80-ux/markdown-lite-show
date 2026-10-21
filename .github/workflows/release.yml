@@ -131,3 +131,16 @@ jobs:
           files: artifacts/*
           fail_on_unmatched_files: true
           make_latest: true
+      - name: Delete previous releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release list --limit 100 --json tagName --jq '.[].tagName' |
+            while IFS= read -r tag; do
+              if [ -n "$tag" ] && [ "$tag" != "$CURRENT_TAG" ]; then
+                echo "Deleting previous release and tag: $tag"
+                gh release delete "$tag" --yes --cleanup-tag
+              fi
+            done

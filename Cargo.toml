@@ -1,11 +1,11 @@
 [package]
 name = "mdlite"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 rust-version = "1.95"
 description = "MarkLite - a lightweight cross-platform Markdown editor with PDF and Word export"
 license = "MIT"
-authors = ["Carl Lau <carllau80@gmail.com>"]
+authors = ["Carl Lau"]
 repository = "https://github.com/carllau80-ux/markdown-lite-show"
 homepage = "https://github.com/carllau80-ux/markdown-lite-show"
 
@@ -25,6 +25,7 @@ path = "examples/export_demo.rs"
 [features]
 default = ["gui"]
 gui = [
+    "dep:arboard",
     "dep:atomicwrites",
     "dep:directories",
     "dep:eframe",
@@ -54,6 +55,7 @@ url = "2"
 wait-timeout = "0.2"
 
 # GUI-only dependencies
+arboard = { version = "3", optional = true }
 atomicwrites = { version = "0.4.4", optional = true }
 directories = { version = "6", optional = true }
 eframe = { version = "0.37", optional = true, default-features = false, features = [

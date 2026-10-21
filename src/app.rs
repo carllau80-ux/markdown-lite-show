@@ -3,6 +3,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use crate::icons;
+use eframe::egui::text::{CCursor, CCursorRange};
 use eframe::egui::{
     self, Align, Color32, CornerRadius, FontId, Frame, Id, Key, Label, Layout, Margin, Modal,
     Modifiers, Panel, PointerButton, RichText, ScrollArea, Stroke, TextEdit, TextStyle,
@@ -172,6 +173,14 @@ enum PendingAction {
 }
 
 #[derive(Clone, Copy)]
+enum EditorAction {
+    Copy,
+    Cut,
+    Paste,
+    Find { replace: bool },
+}
+
+#[derive(Clone, Copy)]
 enum ConfirmChoice {
     Save,
     Discard,
@@ -194,6 +203,18 @@ pub struct MarkLiteApp {
     notice: Option<String>,
     last_dir: Option<PathBuf>,
     focus_editor: bool,
+    editor_id: Option<Id>,
+    pending_editor_action: Option<EditorAction>,
+    pending_editor_selection: Option<(u64, usize, usize)>,
+    restore_editor_selection: bool,
+    find_replace_open: bool,
+    find_show_replace: bool,
+    find_query: String,
+    replace_query: String,
+    find_current: usize,
+    find_selected: bool,
+    find_focus: bool,
+    last_editor_selection: Option<(u64, usize, usize)>,
     window_title: String,
     #[cfg(target_os = "macos")]
     native_menu: Option<crate::native_menu::NativeMenu>,
@@ -221,6 +242,18 @@ impl MarkLiteApp {
             notice: Some(welcome.clone()),
             last_dir: std::env::current_dir().ok(),
             focus_editor: true,
+            editor_id: None,
+            pending_editor_action: None,
+            pending_editor_selection: None,
+            restore_editor_selection: false,
+            find_replace_open: false,
+            find_show_replace: false,
+            find_query: String::new(),
+            replace_query: String::new(),
+            find_current: 0,
+            find_selected: false,
+            find_focus: false,
+            last_editor_selection: None,
             window_title: String::new(),
             #[cfg(target_os = "macos")]
             native_menu: None,
@@ -409,6 +442,110 @@ impl MarkLiteApp {
         ctx.request_repaint();
     }
 
+    fn request_editor_action(&mut self, action: EditorAction) {
+        if self.mode == Mode::Preview {
+            self.mode = Mode::Split;
+        }
+        match action {
+            EditorAction::Find { replace } => {
+                if !self.find_replace_open || self.find_show_replace != replace {
+                    self.find_current = 0;
+                    self.find_selected = false;
+                }
+                self.find_replace_open = true;
+                self.find_show_replace = replace;
+                self.find_focus = true;
+                self.focus_editor = false;
+            }
+            _ => {
+                self.pending_editor_selection = self.last_editor_selection;
+                self.restore_editor_selection = self.pending_editor_selection.is_some();
+                self.pending_editor_action = Some(action);
+                self.focus_editor = true;
+            }
+        }
+    }
+
+    fn cache_editor_selection(&mut self, ctx: &egui::Context, editor_id: egui::Id, doc_id: u64) {
+        let Some(state) = egui::widgets::text_edit::TextEditState::load(ctx, editor_id) else {
+            return;
+        };
+        let Some(range) = state.cursor.char_range() else {
+            return;
+        };
+        self.last_editor_selection = Some((doc_id, range.primary.index.0, range.secondary.index.0));
+    }
+
+    fn apply_pending_selection(&self, ctx: &egui::Context, editor_id: egui::Id) {
+        let Some((doc_id, primary, secondary)) = self.pending_editor_selection else {
+            return;
+        };
+        if doc_id != self.active_doc().id {
+            return;
+        }
+        let char_count = self.active_doc().content.chars().count();
+        let primary = primary.min(char_count);
+        let secondary = secondary.min(char_count);
+        let range = CCursorRange::two(CCursor::new(primary), CCursor::new(secondary));
+        let mut state =
+            egui::widgets::text_edit::TextEditState::load(ctx, editor_id).unwrap_or_default();
+        state.cursor.set_char_range(Some(range));
+        state.store(ctx, editor_id);
+    }
+
+    fn dispatch_editor_action(&mut self, ctx: &egui::Context) {
+        let Some(action) = self.pending_editor_action else {
+            return;
+        };
+        if self.mode == Mode::Preview {
+            self.mode = Mode::Split;
+            self.focus_editor = true;
+            return;
+        }
+        let Some(editor_id) = self.editor_id else {
+            self.focus_editor = true;
+            return;
+        };
+        let focused = ctx.memory(|memory| memory.has_focus(editor_id));
+        if self.restore_editor_selection {
+            if !focused {
+                self.focus_editor = true;
+                return;
+            }
+            if self.pending_editor_selection.is_some() {
+                self.apply_pending_selection(ctx, editor_id);
+                self.restore_editor_selection = false;
+                return;
+            }
+            self.restore_editor_selection = false;
+        }
+        if !focused {
+            self.focus_editor = true;
+            return;
+        }
+        match action {
+            EditorAction::Copy => {
+                ctx.input_mut(|input| input.events.push(egui::Event::Copy));
+            }
+            EditorAction::Cut => {
+                ctx.input_mut(|input| input.events.push(egui::Event::Cut));
+            }
+            EditorAction::Paste => {
+                match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.get_text()) {
+                    Ok(text) => {
+                        ctx.input_mut(|input| input.events.push(egui::Event::Paste(text)));
+                    }
+                    Err(error) => {
+                        self.error_message = Some(self.i18n().clipboard_failed(&error.to_string()));
+                    }
+                }
+            }
+            EditorAction::Find { .. } => {}
+        }
+        self.pending_editor_action = None;
+        self.pending_editor_selection = None;
+    }
+
     fn uses_native_menu(&self) -> bool {
         #[cfg(target_os = "macos")]
         {
@@ -425,10 +562,17 @@ impl MarkLiteApp {
         if self.native_menu_failed {
             return;
         }
-        if self.native_menu.as_ref().map(|menu| menu.language) == Some(self.settings.language) {
+        if self.native_menu.as_ref().is_some_and(|menu| {
+            menu.language == self.settings.language
+                && menu.recent_files == self.settings.recent_files
+        }) {
             return;
         }
-        match crate::native_menu::NativeMenu::install(ctx, self.settings.language) {
+        match crate::native_menu::NativeMenu::install(
+            ctx,
+            self.settings.language,
+            &self.settings.recent_files,
+        ) {
             Some(menu) => self.native_menu = Some(menu),
             None => self.native_menu_failed = true,
         }
@@ -463,6 +607,27 @@ impl MarkLiteApp {
                 crate::native_menu::NativeAction::CloseTab => {
                     self.request_close_tab(self.active, ctx);
                 }
+                crate::native_menu::NativeAction::OpenRecent(path) => {
+                    self.open_paths(&[path]);
+                }
+                crate::native_menu::NativeAction::ClearRecent => {
+                    self.clear_recent_files();
+                }
+                crate::native_menu::NativeAction::Copy => {
+                    self.request_editor_action(EditorAction::Copy);
+                }
+                crate::native_menu::NativeAction::Cut => {
+                    self.request_editor_action(EditorAction::Cut);
+                }
+                crate::native_menu::NativeAction::Paste => {
+                    self.request_editor_action(EditorAction::Paste);
+                }
+                crate::native_menu::NativeAction::Find => {
+                    self.request_editor_action(EditorAction::Find { replace: false });
+                }
+                crate::native_menu::NativeAction::Replace => {
+                    self.request_editor_action(EditorAction::Find { replace: true });
+                }
                 crate::native_menu::NativeAction::EditMode => {
                     self.mode = Mode::Edit;
                     self.focus_editor = true;
@@ -482,9 +647,6 @@ impl MarkLiteApp {
                 }
                 crate::native_menu::NativeAction::GitHub => {
                     self.open_external(ctx, mdlite::GITHUB_URL);
-                }
-                crate::native_menu::NativeAction::Email => {
-                    self.open_external(ctx, &format!("mailto:{}", mdlite::AUTHOR_EMAIL));
                 }
             }
         }
@@ -591,6 +753,12 @@ impl MarkLiteApp {
         let native_menu = self.uses_native_menu();
         let mut new_mode = None;
         let mut action = None;
+        let mut edit_action = None;
+        let (replace_mods, replace_key) = if cfg!(target_os = "macos") {
+            (Modifiers::COMMAND | Modifiers::ALT, Key::F)
+        } else {
+            (Modifiers::COMMAND, Key::H)
+        };
 
         ctx.input_mut(|input| {
             if !native_menu {
@@ -610,6 +778,10 @@ impl MarkLiteApp {
                     new_mode = Some(Mode::Split);
                 } else if input.consume_key(Modifiers::COMMAND, Key::Num3) {
                     new_mode = Some(Mode::Preview);
+                } else if input.consume_key(Modifiers::COMMAND, Key::F) {
+                    edit_action = Some(EditorAction::Find { replace: false });
+                } else if input.consume_key(replace_mods, replace_key) {
+                    edit_action = Some(EditorAction::Find { replace: true });
                 }
             }
 
@@ -627,6 +799,10 @@ impl MarkLiteApp {
             if mode != Mode::Preview {
                 self.focus_editor = true;
             }
+        }
+
+        if let Some(edit_action) = edit_action {
+            self.request_editor_action(edit_action);
         }
 
         match action {
@@ -658,6 +834,11 @@ impl MarkLiteApp {
         let shortcut_save = i18n.shortcut("S");
         let shortcut_save_as = i18n.shortcut("Shift+S");
         let shortcut_close_tab = i18n.shortcut("W");
+        let shortcut_copy = i18n.shortcut("C");
+        let shortcut_cut = i18n.shortcut("X");
+        let shortcut_paste = i18n.shortcut("V");
+        let shortcut_find = i18n.find_shortcut_label();
+        let shortcut_replace = i18n.replace_shortcut_label();
 
         Panel::top("mdlite_toolbar")
             .frame(
@@ -718,6 +899,41 @@ impl MarkLiteApp {
                                 self.open_dialog();
                                 ui.close();
                             }
+                            ui.menu_button(icon_text(icons::CLOCK, i18n.recent_files()), |ui| {
+                                if self.settings.recent_files.is_empty() {
+                                    ui.add_enabled(
+                                        false,
+                                        egui::Button::new(i18n.no_recent_files()).frame(false),
+                                    );
+                                } else {
+                                    for raw in self.settings.recent_files.clone() {
+                                        let path = PathBuf::from(&raw);
+                                        let name = path
+                                            .file_name()
+                                            .map(|name| name.to_string_lossy().into_owned())
+                                            .unwrap_or_else(|| raw.clone());
+                                        if menu_button(ui, icons::FILE_TEXT, &name, None)
+                                            .on_hover_text(raw)
+                                            .clicked()
+                                        {
+                                            self.open_paths(&[path]);
+                                            ui.close();
+                                        }
+                                    }
+                                    ui.separator();
+                                    if menu_button(
+                                        ui,
+                                        icons::TRASH,
+                                        i18n.clear_recent_files(),
+                                        None,
+                                    )
+                                    .clicked()
+                                    {
+                                        self.clear_recent_files();
+                                        ui.close();
+                                    }
+                                }
+                            });
                             ui.separator();
                             if menu_button(
                                 ui,
@@ -755,6 +971,55 @@ impl MarkLiteApp {
                             }
                             if menu_button(ui, icons::SIGN_OUT, i18n.exit(), None).clicked() {
                                 ctx.send_viewport_cmd(ViewportCommand::Close);
+                                ui.close();
+                            }
+                        });
+
+                        ui.menu_button(icon_text(icons::PENCIL_SIMPLE, i18n.edit_menu()), |ui| {
+                            if menu_button(ui, icons::COPY, i18n.copy(), Some(&shortcut_copy))
+                                .clicked()
+                            {
+                                self.request_editor_action(EditorAction::Copy);
+                                ui.close();
+                            }
+                            if menu_button(ui, icons::SCISSORS, i18n.cut(), Some(&shortcut_cut))
+                                .clicked()
+                            {
+                                self.request_editor_action(EditorAction::Cut);
+                                ui.close();
+                            }
+                            if menu_button(
+                                ui,
+                                icons::CLIPBOARD_TEXT,
+                                i18n.paste(),
+                                Some(&shortcut_paste),
+                            )
+                            .clicked()
+                            {
+                                self.request_editor_action(EditorAction::Paste);
+                                ui.close();
+                            }
+                            ui.separator();
+                            if menu_button(
+                                ui,
+                                icons::MAGNIFYING_GLASS,
+                                i18n.find(),
+                                Some(&shortcut_find),
+                            )
+                            .clicked()
+                            {
+                                self.request_editor_action(EditorAction::Find { replace: false });
+                                ui.close();
+                            }
+                            if menu_button(
+                                ui,
+                                icons::REPEAT,
+                                i18n.replace(),
+                                Some(&shortcut_replace),
+                            )
+                            .clicked()
+                            {
+                                self.request_editor_action(EditorAction::Find { replace: true });
                                 ui.close();
                             }
                         });
@@ -803,17 +1068,7 @@ impl MarkLiteApp {
                             if menu_button(ui, icons::GITHUB_LOGO, i18n.github_repository(), None)
                                 .clicked()
                             {
-                                ui.ctx()
-                                    .open_url(egui::OpenUrl::new_tab(mdlite::GITHUB_URL));
-                                ui.close();
-                            }
-                            if menu_button(ui, icons::ENVELOPE_SIMPLE, i18n.email_author(), None)
-                                .clicked()
-                            {
-                                ui.ctx().open_url(egui::OpenUrl::new_tab(format!(
-                                    "mailto:{}",
-                                    mdlite::AUTHOR_EMAIL
-                                )));
+                                self.open_external(ui.ctx(), mdlite::GITHUB_URL);
                                 ui.close();
                             }
                         });
@@ -1078,105 +1333,327 @@ impl MarkLiteApp {
             });
     }
 
-    fn show_editor(&mut self, ui: &mut egui::Ui) {
+    fn show_find_replace(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let palette = self.palette();
         let i18n = self.i18n();
-        let available = ui.available_width();
-        let page_width = (available - 40.0).clamp(280.0, 980.0);
-        let side = ((available - page_width) / 2.0).max(0.0);
         let active = self.active;
-        let doc_id = self.docs[active].id;
+        let mut step = 0isize;
+        let mut replace_one = false;
+        let mut replace_all = false;
+        let mut close = false;
 
-        ScrollArea::vertical()
-            .id_salt(("mdlite_editor_scroll", doc_id))
-            .auto_shrink([false, false])
+        Frame::new()
+            .fill(palette.accent_soft)
+            .corner_radius(6)
+            .inner_margin(Margin::symmetric(8, 6))
             .show(ui, |ui| {
-                ui.add_space(18.0);
-                ui.horizontal_top(|ui| {
-                    ui.add_space(side);
-                    Frame::new()
-                        .fill(palette.page)
-                        .stroke(Stroke::new(1.0, palette.border))
-                        .corner_radius(10)
-                        .inner_margin(Margin::symmetric(26, 24))
-                        .show(ui, |ui| {
-                            ui.set_width((page_width - 52.0).max(200.0));
-                            let rows = self.docs[active].content.lines().count().max(22);
-                            let response = ui.add(
-                                TextEdit::multiline(&mut self.docs[active].content)
-                                    .id_salt(("mdlite_editor", doc_id))
-                                    .font(FontId::monospace(15.0))
-                                    .code_editor()
-                                    .desired_width(f32::INFINITY)
-                                    .desired_rows(rows)
-                                    .margin(Margin::ZERO)
-                                    .frame(Frame::NONE)
-                                    .hint_text(i18n.editor_placeholder()),
-                            );
-                            if response.changed() {
-                                self.docs[active].dirty = true;
-                                self.notice = None;
-                            }
-                            if self.focus_editor {
-                                response.request_focus();
-                                self.focus_editor = false;
-                            }
-                        });
+                ui.horizontal_wrapped(|ui| {
+                    let find_response = ui.add(
+                        TextEdit::singleline(&mut self.find_query)
+                            .hint_text(i18n.find_hint())
+                            .desired_width(150.0),
+                    );
+                    if self.find_focus {
+                        find_response.request_focus();
+                        self.find_focus = false;
+                    }
+                    if find_response.changed() {
+                        self.find_current = 0;
+                        self.find_selected = false;
+                    }
+
+                    let matches = find_matches_in(&self.docs[active].content, &self.find_query);
+                    if matches.is_empty() {
+                        self.find_current = 0;
+                    } else if self.find_current >= matches.len() {
+                        self.find_current = matches.len() - 1;
+                    }
+                    let count_label = if self.find_query.is_empty() {
+                        String::new()
+                    } else if matches.is_empty() {
+                        i18n.no_matches().to_owned()
+                    } else {
+                        format!("{}/{}", self.find_current + 1, matches.len())
+                    };
+                    ui.label(RichText::new(count_label).size(11.5).color(palette.muted));
+
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                RichText::new(icons::ARROW_UP)
+                                    .size(11.0)
+                                    .color(palette.muted),
+                            )
+                            .frame(false)
+                            .small(),
+                        )
+                        .on_hover_text(i18n.find_previous())
+                        .clicked()
+                    {
+                        step = -1;
+                    }
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                RichText::new(icons::ARROW_DOWN)
+                                    .size(11.0)
+                                    .color(palette.muted),
+                            )
+                            .frame(false)
+                            .small(),
+                        )
+                        .on_hover_text(i18n.find_next())
+                        .clicked()
+                    {
+                        step = 1;
+                    }
+                    if find_response.has_focus() && ui.input(|input| input.key_pressed(Key::Enter))
+                    {
+                        step = 1;
+                    }
+                    if find_response.has_focus() && ui.input(|input| input.key_pressed(Key::Escape))
+                    {
+                        close = true;
+                    }
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                RichText::new(icons::X).size(11.0).color(palette.muted),
+                            )
+                            .frame(false)
+                            .small(),
+                        )
+                        .on_hover_text(i18n.close())
+                        .clicked()
+                    {
+                        close = true;
+                    }
                 });
-                ui.add_space(22.0);
+
+                if self.find_show_replace {
+                    ui.add_space(4.0);
+                    ui.horizontal_wrapped(|ui| {
+                        let replace_response = ui.add(
+                            TextEdit::singleline(&mut self.replace_query)
+                                .hint_text(i18n.replace_hint())
+                                .desired_width(150.0),
+                        );
+                        if ui.button(i18n.replace()).clicked() {
+                            replace_one = true;
+                        }
+                        if ui.button(i18n.replace_all()).clicked() {
+                            replace_all = true;
+                        }
+                        if replace_response.has_focus()
+                            && ui.input(|input| input.key_pressed(Key::Enter))
+                        {
+                            replace_one = true;
+                        }
+                    });
+                }
             });
+
+        if close {
+            self.find_replace_open = false;
+        } else if replace_one {
+            self.replace_current_match(ctx);
+        } else if replace_all {
+            self.replace_all_matches();
+        } else if step != 0 {
+            self.find_step(ctx, step);
+        }
     }
 
-    fn show_preview(&mut self, ui: &mut egui::Ui, compact: bool) {
+    fn find_step(&mut self, ctx: &egui::Context, delta: isize) {
+        let matches = find_matches_in(&self.active_doc().content, &self.find_query);
+        if matches.is_empty() {
+            return;
+        }
+        let len = matches.len() as isize;
+        if !self.find_selected {
+            self.find_selected = true;
+            self.find_current = if delta >= 0 { 0 } else { matches.len() - 1 };
+        } else {
+            self.find_current = (self.find_current as isize + delta).rem_euclid(len) as usize;
+        }
+        let (start, end) = matches[self.find_current];
+        self.select_editor_bytes(ctx, start, end);
+    }
+
+    fn replace_current_match(&mut self, ctx: &egui::Context) {
+        if self.find_query.is_empty() {
+            return;
+        }
+        let active = self.active;
+        let matches = find_matches_in(&self.docs[active].content, &self.find_query);
+        let Some(&(start, end)) = matches.get(self.find_current) else {
+            return;
+        };
+        let replacement = self.replace_query.clone();
+        self.docs[active]
+            .content
+            .replace_range(start..end, &replacement);
+        self.last_editor_selection = None;
+        self.docs[active].dirty = true;
+        self.notice = None;
+        self.find_selected = false;
+        self.find_current = 0;
+        let inserted_end = start + replacement.len();
+        self.select_editor_bytes(ctx, inserted_end, inserted_end);
+    }
+
+    fn replace_all_matches(&mut self) {
+        if self.find_query.is_empty() {
+            return;
+        }
+        let query = self.find_query.clone();
+        let replacement = self.replace_query.clone();
+        let active = self.active;
+        if self.docs[active].content.contains(&query) {
+            self.docs[active].content = self.docs[active].content.replace(&query, &replacement);
+            self.last_editor_selection = None;
+            self.docs[active].dirty = true;
+            self.notice = None;
+            self.find_current = 0;
+            self.find_selected = false;
+        }
+    }
+
+    fn select_editor_bytes(&mut self, ctx: &egui::Context, start: usize, end: usize) {
+        let Some(editor_id) = self.editor_id else {
+            self.focus_editor = true;
+            return;
+        };
+        let content = &self.active_doc().content;
+        let start = start.min(content.len());
+        let end = end.min(content.len());
+        let start_char = content[..start].chars().count();
+        let end_char = content[..end].chars().count();
+        let range = CCursorRange::two(CCursor::new(start_char), CCursor::new(end_char));
+        let mut state =
+            egui::widgets::text_edit::TextEditState::load(ctx, editor_id).unwrap_or_default();
+        state.cursor.set_char_range(Some(range));
+        state.store(ctx, editor_id);
+        self.focus_editor = true;
+        self.find_selected = true;
+    }
+
+    fn show_editor(&mut self, ui: &mut egui::Ui, fixed_width: Option<f32>) {
+        let palette = self.palette();
+        let i18n = self.i18n();
+        let ctx = ui.ctx().clone();
+        let (page_width, side, card_height) = page_metrics(ui, fixed_width);
+        let active = self.active;
+        let doc_id = self.docs[active].id;
+        let editor_id = Id::unique(("mdlite_editor", doc_id));
+        self.editor_id = Some(editor_id);
+
+        ui.add_space(16.0);
+        ui.horizontal_top(|ui| {
+            ui.add_space(side);
+            Frame::new()
+                .fill(palette.page)
+                .stroke(Stroke::new(1.0, palette.border))
+                .corner_radius(10)
+                .inner_margin(Margin::symmetric(24, 20))
+                .show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.set_width((page_width - 48.0).max(200.0));
+                        ui.set_height((card_height - 40.0).max(120.0));
+
+                        if self.find_replace_open {
+                            self.show_find_replace(ui, &ctx);
+                            ui.add_space(6.0);
+                        }
+
+                        let scroll_height = ui.available_height();
+                        ScrollArea::vertical()
+                            .id_salt(("mdlite_editor_scroll", doc_id))
+                            .auto_shrink([false, false])
+                            .max_height(scroll_height)
+                            .show(ui, |ui| {
+                                let rows = self.docs[active].content.lines().count().max(20);
+                                let response = ui.add(
+                                    TextEdit::multiline(&mut self.docs[active].content)
+                                        .id(editor_id)
+                                        .font(FontId::monospace(15.0))
+                                        .code_editor()
+                                        .desired_width(f32::INFINITY)
+                                        .desired_rows(rows)
+                                        .margin(Margin::ZERO)
+                                        .frame(Frame::NONE)
+                                        .hint_text(i18n.editor_placeholder()),
+                                );
+                                if response.changed() {
+                                    self.docs[active].dirty = true;
+                                    self.notice = None;
+                                }
+                                if self.focus_editor {
+                                    response.request_focus();
+                                    self.focus_editor = false;
+                                }
+                                if response.has_focus()
+                                    || ctx.memory(|memory| memory.has_focus(editor_id))
+                                {
+                                    self.cache_editor_selection(&ctx, editor_id, doc_id);
+                                }
+                            });
+                    });
+                });
+        });
+    }
+
+    fn show_preview(&mut self, ui: &mut egui::Ui, fixed_width: Option<f32>) {
         let palette = self.palette();
         let i18n = self.i18n();
         let source = self.preview_markdown();
         let empty = self.active_doc().content.trim().is_empty();
-        let available = ui.available_width();
-        let page_width = (available - if compact { 28.0 } else { 48.0 }).clamp(260.0, 900.0);
-        let side = ((available - page_width) / 2.0).max(0.0);
+        let (page_width, side, card_height) = page_metrics(ui, fixed_width);
         let doc_id = self.active_doc().id;
         let cache = &mut self.preview_cache;
 
-        ScrollArea::vertical()
-            .id_salt(("mdlite_preview_scroll", doc_id))
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                ui.add_space(18.0);
-                ui.horizontal_top(|ui| {
-                    ui.add_space(side);
-                    Frame::new()
-                        .fill(palette.page)
-                        .stroke(Stroke::new(1.0, palette.border))
-                        .corner_radius(10)
-                        .inner_margin(Margin::symmetric(30, 26))
-                        .show(ui, |ui| {
-                            ui.set_width((page_width - 60.0).max(200.0));
-                            ui.style_mut().url_in_tooltip = true;
-
-                            if empty {
-                                ui.add_space(46.0);
-                                ui.vertical_centered(|ui| {
-                                    ui.label(
-                                        RichText::new(i18n.preview_empty_title())
-                                            .size(22.0)
-                                            .strong()
-                                            .color(palette.muted),
-                                    );
-                                    ui.add_space(6.0);
-                                    ui.label(
-                                        RichText::new(i18n.preview_empty_hint())
-                                            .size(13.0)
-                                            .color(palette.muted),
-                                    );
-                                });
-                            } else {
-                                CommonMarkViewer::new().show(ui, cache, &source);
-                            }
-                        });
+        ui.add_space(16.0);
+        ui.horizontal_top(|ui| {
+            ui.add_space(side);
+            Frame::new()
+                .fill(palette.page)
+                .stroke(Stroke::new(1.0, palette.border))
+                .corner_radius(10)
+                .inner_margin(Margin::symmetric(24, 20))
+                .show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.set_width((page_width - 48.0).max(200.0));
+                        ui.set_height((card_height - 40.0).max(120.0));
+                        let scroll_height = ui.available_height();
+                        ScrollArea::vertical()
+                            .id_salt(("mdlite_preview_scroll", doc_id))
+                            .auto_shrink([false, false])
+                            .max_height(scroll_height)
+                            .show(ui, |ui| {
+                                ui.style_mut().url_in_tooltip = true;
+                                if empty {
+                                    ui.add_space(30.0);
+                                    ui.vertical_centered(|ui| {
+                                        ui.label(
+                                            RichText::new(i18n.preview_empty_title())
+                                                .size(22.0)
+                                                .strong()
+                                                .color(palette.muted),
+                                        );
+                                        ui.add_space(6.0);
+                                        ui.label(
+                                            RichText::new(i18n.preview_empty_hint())
+                                                .size(13.0)
+                                                .color(palette.muted),
+                                        );
+                                    });
+                                } else {
+                                    CommonMarkViewer::new().show(ui, cache, &source);
+                                }
+                            });
+                    });
                 });
-                ui.add_space(24.0);
-            });
+        });
     }
 
     fn preview_markdown(&self) -> String {
@@ -1220,6 +1697,7 @@ impl MarkLiteApp {
             {
                 self.active = index;
                 self.focus_editor = true;
+                self.record_recent_file(&path);
                 continue;
             }
 
@@ -1235,6 +1713,7 @@ impl MarkLiteApp {
                     if let Some(parent) = path.parent() {
                         self.last_dir = Some(parent.to_path_buf());
                     }
+                    self.record_recent_file(&path);
                 }
                 Err(ReadError::Io(error)) => {
                     errors.push(i18n.read_failed(&path, &error.to_string()));
@@ -1324,6 +1803,7 @@ impl MarkLiteApp {
                 if let Some(parent) = path.parent() {
                     self.last_dir = Some(parent.to_path_buf());
                 }
+                self.record_recent_file(path);
                 true
             }
             Err(error) => {
@@ -1346,6 +1826,19 @@ impl MarkLiteApp {
             }
         }
         true
+    }
+
+    fn record_recent_file(&mut self, path: &Path) {
+        self.settings.add_recent_file(path);
+        let _ = self.settings.save();
+    }
+
+    fn clear_recent_files(&mut self) {
+        self.settings.clear_recent_files();
+        if let Err(error) = self.settings.save() {
+            self.error_message = Some(self.i18n().settings_save_failed(&error));
+        }
+        self.notice = Some(self.i18n().recent_cleared().to_owned());
     }
 
     fn request_close_tab(&mut self, index: usize, ctx: &egui::Context) {
@@ -1747,16 +2240,7 @@ impl MarkLiteApp {
                         .size(12.5)
                         .color(palette.muted),
                 );
-                if ui
-                    .link(format!(
-                        "{} <{}>",
-                        mdlite::AUTHOR_NAME,
-                        mdlite::AUTHOR_EMAIL
-                    ))
-                    .clicked()
-                {
-                    external_url = Some(format!("mailto:{}", mdlite::AUTHOR_EMAIL));
-                }
+                ui.label(mdlite::AUTHOR_NAME);
             });
             if ui.link(mdlite::GITHUB_URL).clicked() {
                 external_url = Some(mdlite::GITHUB_URL.to_owned());
@@ -1828,6 +2312,7 @@ impl eframe::App for MarkLiteApp {
             self.process_native_menu(&ctx);
         }
 
+        self.dispatch_editor_action(&ctx);
         self.handle_close_request(&ctx);
         self.update_window_title(&ctx);
         self.handle_dropped_files(&ctx);
@@ -1840,32 +2325,27 @@ impl eframe::App for MarkLiteApp {
         let palette = self.palette();
         match self.mode {
             Mode::Edit => {
-                egui::CentralPanel::no_frame().show(ui, |ui| {
-                    Frame::new()
-                        .fill(palette.editor_bg)
-                        .show(ui, |ui| self.show_editor(ui));
-                });
+                egui::CentralPanel::default()
+                    .frame(Frame::new().fill(palette.editor_bg))
+                    .show(ui, |ui| self.show_editor(ui, None));
             }
             Mode::Preview => {
-                egui::CentralPanel::no_frame().show(ui, |ui| {
-                    Frame::new()
-                        .fill(palette.preview_bg)
-                        .show(ui, |ui| self.show_preview(ui, false));
-                });
+                egui::CentralPanel::default()
+                    .frame(Frame::new().fill(palette.preview_bg))
+                    .show(ui, |ui| self.show_preview(ui, None));
             }
             Mode::Split => {
+                let total_width = ui.available_width();
+                let side_width = (total_width * 0.5).floor();
+                let card_width = (side_width - 40.0).clamp(240.0, 980.0);
                 Panel::left("mdlite_editor_panel")
-                    .resizable(true)
-                    .default_size(570.0)
-                    .min_size(320.0)
-                    .max_size(980.0)
+                    .resizable(false)
+                    .exact_size(side_width)
                     .frame(Frame::new().fill(palette.editor_bg))
-                    .show(ui, |ui| self.show_editor(ui));
-                egui::CentralPanel::no_frame().show(ui, |ui| {
-                    Frame::new()
-                        .fill(palette.preview_bg)
-                        .show(ui, |ui| self.show_preview(ui, true));
-                });
+                    .show(ui, |ui| self.show_editor(ui, Some(card_width)));
+                egui::CentralPanel::default()
+                    .frame(Frame::new().fill(palette.preview_bg))
+                    .show(ui, |ui| self.show_preview(ui, Some(card_width)));
             }
         }
 
@@ -1885,6 +2365,27 @@ enum Shortcut {
     CloseTab,
     NextTab,
     PreviousTab,
+}
+
+fn page_metrics(ui: &egui::Ui, fixed_width: Option<f32>) -> (f32, f32, f32) {
+    let available_width = ui.available_width();
+    let max_fit = (available_width - 24.0).max(200.0);
+    let page_width = fixed_width
+        .unwrap_or_else(|| (available_width - 48.0).clamp(260.0, 980.0))
+        .min(max_fit);
+    let side = ((available_width - page_width) / 2.0).max(0.0);
+    let card_height = (ui.available_height() - 32.0).max(160.0);
+    (page_width, side, card_height)
+}
+
+fn find_matches_in(content: &str, query: &str) -> Vec<(usize, usize)> {
+    if query.is_empty() {
+        return Vec::new();
+    }
+    content
+        .match_indices(query)
+        .map(|(start, matched)| (start, start + matched.len()))
+        .collect()
 }
 
 fn icon_text(icon: &str, label: &str) -> String {
@@ -2149,6 +2650,16 @@ mod tests {
             ensure_export_extension(PathBuf::from("报告.txt"), "pdf"),
             PathBuf::from("报告.pdf")
         );
+    }
+
+    #[test]
+    fn finds_unicode_matches_with_byte_offsets() {
+        let content = "你好 world 你好";
+        let matches = find_matches_in(content, "你好");
+        assert_eq!(matches.len(), 2);
+        for (start, end) in matches {
+            assert_eq!(&content[start..end], "你好");
+        }
     }
 
     #[test]

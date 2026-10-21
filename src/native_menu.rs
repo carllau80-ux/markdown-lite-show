@@ -1,5 +1,6 @@
 //! Native macOS application menu and About panel.
 
+use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, OnceLock};
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -10,13 +11,20 @@ use muda::{AboutMetadata, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem,
 use crate::i18n::I18n;
 use crate::settings::Language;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NativeAction {
     NewTab,
     Open,
     Save,
     SaveAs,
     CloseTab,
+    OpenRecent(PathBuf),
+    ClearRecent,
+    Copy,
+    Cut,
+    Paste,
+    Find,
+    Replace,
     EditMode,
     SplitMode,
     PreviewMode,
@@ -25,7 +33,6 @@ pub enum NativeAction {
     Settings,
     Quit,
     GitHub,
-    Email,
 }
 
 static MENU_EVENTS: LazyLock<(Sender<MenuEvent>, Receiver<MenuEvent>)> = LazyLock::new(unbounded);
@@ -48,10 +55,15 @@ pub struct NativeMenu {
     _menu: Menu,
     actions: Vec<(MenuId, NativeAction)>,
     pub language: Language,
+    pub recent_files: Vec<String>,
 }
 
 impl NativeMenu {
-    pub fn install(ctx: &egui::Context, language: Language) -> Option<Self> {
+    pub fn install(
+        ctx: &egui::Context,
+        language: Language,
+        recent_files: &[String],
+    ) -> Option<Self> {
         let i18n = I18n::new(language);
         let menu = Menu::new();
         let mut actions = Vec::new();
@@ -63,11 +75,7 @@ impl NativeMenu {
                 version: Some(mdlite::APP_VERSION.to_owned()),
                 short_version: Some(mdlite::APP_VERSION.to_owned()),
                 copyright: Some("© 2026 Carl Lau · MIT License".to_owned()),
-                credits: Some(format!(
-                    "Carl Lau <{}>\n{}\n\nMIT License",
-                    mdlite::AUTHOR_EMAIL,
-                    mdlite::GITHUB_URL
-                )),
+                credits: Some(format!("Carl Lau\n{}\n\nMIT License", mdlite::GITHUB_URL)),
                 ..Default::default()
             }),
         );
@@ -109,16 +117,66 @@ impl NativeMenu {
             (save_as.id().clone(), NativeAction::SaveAs),
             (close_tab.id().clone(), NativeAction::CloseTab),
         ]);
+        let recent_menu = Submenu::new(i18n.recent_files(), true);
+        if recent_files.is_empty() {
+            recent_menu
+                .append(&MenuItem::new(i18n.no_recent_files(), false, None))
+                .ok()?;
+        } else {
+            for raw in recent_files {
+                let path = Path::new(raw);
+                let label = path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| raw.clone());
+                let item = MenuItem::new(label, true, None);
+                actions.push((
+                    item.id().clone(),
+                    NativeAction::OpenRecent(path.to_path_buf()),
+                ));
+                recent_menu.append(&item).ok()?;
+            }
+            recent_menu.append(&PredefinedMenuItem::separator()).ok()?;
+            let clear = MenuItem::new(i18n.clear_recent_files(), true, None);
+            actions.push((clear.id().clone(), NativeAction::ClearRecent));
+            recent_menu.append(&clear).ok()?;
+        }
+
         let file_menu = Submenu::new(i18n.file_menu(), true);
         file_menu
             .append_items(&[
                 &new_tab,
                 &open,
+                &recent_menu,
                 &PredefinedMenuItem::separator(),
                 &save,
                 &save_as,
                 &PredefinedMenuItem::separator(),
                 &close_tab,
+            ])
+            .ok()?;
+
+        let copy = MenuItem::new(i18n.copy(), true, accelerator("cmd+c"));
+        let cut = MenuItem::new(i18n.cut(), true, accelerator("cmd+x"));
+        let paste = MenuItem::new(i18n.paste(), true, accelerator("cmd+v"));
+        let find = MenuItem::new(i18n.find(), true, accelerator("cmd+f"));
+        let replace = MenuItem::new(i18n.replace(), true, accelerator("cmd+alt+f"));
+        actions.extend([
+            (copy.id().clone(), NativeAction::Copy),
+            (cut.id().clone(), NativeAction::Cut),
+            (paste.id().clone(), NativeAction::Paste),
+            (find.id().clone(), NativeAction::Find),
+            (replace.id().clone(), NativeAction::Replace),
+        ]);
+        let edit_menu = Submenu::new(i18n.edit_menu(), true);
+        edit_menu
+            .append_items(&[
+                &copy,
+                &cut,
+                &paste,
+                &PredefinedMenuItem::separator(),
+                &find,
+                &replace,
             ])
             .ok()?;
 
@@ -145,16 +203,19 @@ impl NativeMenu {
             .ok()?;
 
         let github = MenuItem::new(i18n.github_repository(), true, None);
-        let email = MenuItem::new(i18n.email_author(), true, None);
-        actions.extend([
-            (github.id().clone(), NativeAction::GitHub),
-            (email.id().clone(), NativeAction::Email),
-        ]);
+        actions.push((github.id().clone(), NativeAction::GitHub));
         let help_menu = Submenu::new(i18n.help_menu(), true);
-        help_menu.append_items(&[&github, &email]).ok()?;
+        help_menu.append_items(&[&github]).ok()?;
 
-        menu.append_items(&[&app_menu, &file_menu, &view_menu, &export_menu, &help_menu])
-            .ok()?;
+        menu.append_items(&[
+            &app_menu,
+            &file_menu,
+            &edit_menu,
+            &view_menu,
+            &export_menu,
+            &help_menu,
+        ])
+        .ok()?;
         menu.init_for_nsapp();
 
         install_event_handler(ctx);
@@ -163,6 +224,7 @@ impl NativeMenu {
             _menu: menu,
             actions,
             language,
+            recent_files: recent_files.to_vec(),
         })
     }
 
@@ -170,7 +232,7 @@ impl NativeMenu {
         let mut actions = Vec::new();
         while let Ok(event) = MENU_EVENTS.1.try_recv() {
             if let Some((_, action)) = self.actions.iter().find(|(id, _)| id == &event.id) {
-                actions.push(*action);
+                actions.push(action.clone());
             }
         }
         actions

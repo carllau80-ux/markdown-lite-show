@@ -1,4 +1,4 @@
-MarkLite 0.1.3 - Windows x64 portable build
+MarkLite 0.1.4 - Windows x64 portable build
 
 File: mdlite.exe
 Target: x86_64-pc-windows-gnu (Rust 1.99.1), release profile with LTO and strip
@@ -7,13 +7,16 @@ Installer: none (portable single-file executable)
 
 Includes:
 - Multi-file tabs, multi-select open, dirty-state close/quit prompts
-- Split editor with live preview
+- Split editor with live preview; editor and preview cards use equal dimensions
+- Edit menu with copy, cut, paste, find and find-and-replace
+- Find/replace bar with match count, previous/next, replace and replace-all
+- Recent files list (up to 10) and clear-history action in the File menu
 - Chinese/English UI, system/light/dark appearance, 5 accent colors
 - Menu bar and Phosphor icons
 - PDF and Word export
 - Native macOS menu bar, About panel and native prompt dialogs
 - System UI font loading and macOS native-style palette
-- Author email and GitHub repository links in About/Help
+- GitHub repository link in About/Help
 - Remote image loading in preview and always-confirm when closing tabs
 - Fixed native menu event delivery for Help links
 - Embedded Common Controls v6 manifest to fix TaskDialogIndirect load errors on Windows
@@ -25,4 +28,4 @@ Notes:
 - Settings are stored in %APPDATA%\MarkLite\settings.json.
 
 SHA256:
-76163b837d2000ada4f76fe9576382673ea62ce6d91679cabd8ba6046d060838  mdlite.exe
+ba1dd490033b8c92416244d35f0ff2cc4302c93893c112aaabc485a017ffa952  mdlite.exe

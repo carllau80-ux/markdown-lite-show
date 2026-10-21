@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use eframe::egui::Color32;
 use serde::{Deserialize, Serialize};
@@ -86,6 +86,8 @@ pub struct Settings {
     pub language: Language,
     pub theme: ThemeMode,
     pub accent: AccentColor,
+    #[serde(default)]
+    pub recent_files: Vec<String>,
 }
 
 impl Settings {
@@ -96,6 +98,18 @@ impl Settings {
             .unwrap_or_default()
     }
 
+    pub fn add_recent_file(&mut self, path: &Path) {
+        let value = path.to_string_lossy().into_owned();
+        self.recent_files
+            .retain(|existing| !same_path_string(existing, &value));
+        self.recent_files.insert(0, value);
+        self.recent_files.truncate(10);
+    }
+
+    pub fn clear_recent_files(&mut self) {
+        self.recent_files.clear();
+    }
+
     pub fn save(&self) -> Result<(), String> {
         let path = config_path().ok_or_else(|| "user config directory not found".to_owned())?;
         if let Some(parent) = path.parent() {
@@ -103,6 +117,17 @@ impl Settings {
         }
         let contents = serde_json::to_string_pretty(self).map_err(|error| error.to_string())?;
         fs::write(path, contents).map_err(|error| error.to_string())
+    }
+}
+
+fn same_path_string(left: &str, right: &str) -> bool {
+    #[cfg(windows)]
+    {
+        left.eq_ignore_ascii_case(right)
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
     }
 }
 
@@ -124,11 +149,25 @@ mod tests {
     }
 
     #[test]
+    fn recent_files_are_deduplicated_and_capped() {
+        let mut settings = Settings::default();
+        for index in 0..12 {
+            settings.add_recent_file(Path::new(&format!("/tmp/{index}.md")));
+        }
+        assert_eq!(settings.recent_files.len(), 10);
+        settings.add_recent_file(Path::new("/tmp/11.md"));
+        assert_eq!(settings.recent_files[0], "/tmp/11.md");
+        settings.clear_recent_files();
+        assert!(settings.recent_files.is_empty());
+    }
+
+    #[test]
     fn settings_round_trip() {
         let settings = Settings {
             language: Language::En,
             theme: ThemeMode::Dark,
             accent: AccentColor::Ocean,
+            recent_files: vec!["/tmp/a.md".to_owned()],
         };
         let json = serde_json::to_string(&settings).unwrap();
         let decoded: Settings = serde_json::from_str(&json).unwrap();

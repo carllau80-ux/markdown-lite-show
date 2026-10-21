@@ -1,4 +1,4 @@
-MarkLite 0.1.2 - Windows x64 portable build
+MarkLite 0.1.3 - Windows x64 portable build
 
 File: mdlite.exe
 Target: x86_64-pc-windows-gnu (Rust 1.99.1), release profile with LTO and strip
@@ -16,6 +16,7 @@ Includes:
 - Author email and GitHub repository links in About/Help
 - Remote image loading in preview and always-confirm when closing tabs
 - Fixed native menu event delivery for Help links
+- Embedded Common Controls v6 manifest to fix TaskDialogIndirect load errors on Windows
 
 Notes:
 - PDF export uses a locally installed Microsoft Edge or Google Chrome/Chromium.
@@ -24,4 +25,4 @@ Notes:
 - Settings are stored in %APPDATA%\MarkLite\settings.json.
 
 SHA256:
-06bccd34c996f4708ff88f4122a1eae859e8ed55b2c7f03933afc066ba49a569  mdlite.exe
+76163b837d2000ada4f76fe9576382673ea62ce6d91679cabd8ba6046d060838  mdlite.exe

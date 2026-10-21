@@ -24,6 +24,14 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       - name: Build
         run: cargo build --release
+      - name: Verify Windows manifest
+        shell: pwsh
+        run: |
+          $bytes = [System.IO.File]::ReadAllBytes("target\release\mdlite.exe")
+          $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if (-not $text.Contains("Microsoft.Windows.Common-Controls")) {
+            throw "Common Controls v6 manifest was not embedded in mdlite.exe"
+          }
       - name: Package
         shell: pwsh
         run: pwsh -NoProfile -File scripts/package-windows.ps1 -Version $env:VERSION

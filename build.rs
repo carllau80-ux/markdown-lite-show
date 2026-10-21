@@ -14,8 +14,9 @@ fn main() {
         resource.set("LegalCopyright", "MIT License");
         resource.set("ProductVersion", env!("CARGO_PKG_VERSION"));
         resource.set("FileVersion", env!("CARGO_PKG_VERSION"));
-        if let Err(error) = resource.compile() {
-            println!("cargo:warning=Windows resource compilation failed: {error}");
-        }
+        resource.set_manifest_file("packaging/windows/marklite.manifest");
+        resource
+            .compile()
+            .expect("failed to compile Windows resources and manifest");
     }
 }

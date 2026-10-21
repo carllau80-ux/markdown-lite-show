@@ -4,10 +4,16 @@
 
 ## 下载
 
-- **Windows x64**：`MarkLite-0.1.2-windows-x64.zip`
-- **Linux x86_64**：`MarkLite-0.1.2-linux-x86_64.tar.gz`
-- **macOS（Universal / Intel + Apple Silicon）**：`MarkLite-0.1.2-macos-universal.zip`
+- **Windows x64**：`MarkLite-0.1.3-windows-x64.zip`
+- **Linux x86_64**：`MarkLite-0.1.3-linux-x86_64.tar.gz`
+- **macOS（Universal / Intel + Apple Silicon）**：`MarkLite-0.1.3-macos-universal.zip`
 - `SHA256SUMS.txt`：所有发布文件的校验和
+
+## v0.1.3 更新
+
+- 修复 Windows 启动错误：内嵌 Common Controls v6 应用清单，解决 `TaskDialogIndirect` 入口点找不到的问题
+- 应用清单同时启用 Per-Monitor V2 DPI 感知和长路径支持
+- 保留远程图片、可用帮助链接和关闭文件确认
 
 ## v0.1.2 更新
 
@@ -38,7 +44,7 @@
 ### Linux
 
 ```bash
-tar -xzf MarkLite-0.1.2-linux-x86_64.tar.gz
+tar -xzf MarkLite-0.1.3-linux-x86_64.tar.gz
 cd MarkLite
 ./mdlite                     # 直接运行
 ./install.sh                 # 可选：安装到 ~/.local

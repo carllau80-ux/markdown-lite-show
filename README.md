@@ -10,9 +10,9 @@ Windows 优先，代码同时按 Windows / macOS / Linux 跨平台方式组织�
 
 GitHub Releases 提供三个平台的构建：
 
-- **Windows x64**：`MarkLite-0.1.2-windows-x64.zip`
-- **Linux x86_64**：`MarkLite-0.1.2-linux-x86_64.tar.gz`
-- **macOS Universal（Intel + Apple Silicon）**：`MarkLite-0.1.2-macos-universal.zip`
+- **Windows x64**：`MarkLite-0.1.3-windows-x64.zip`
+- **Linux x86_64**：`MarkLite-0.1.3-linux-x86_64.tar.gz`
+- **macOS Universal（Intel + Apple Silicon）**：`MarkLite-0.1.3-macos-universal.zip`
 
 下载页：<https://github.com/carllau80-ux/markdown-lite-show/releases/latest>
 
@@ -34,11 +34,12 @@ GitHub Releases 提供三个平台的构建：
 - **标签页关闭修复**：关闭按钮独立命中区域，避免与标签点击互相抢占
 - **链接与图片**：预览支持本地和远程图片；点击链接使用系统默认浏览器打开
 - **关闭确认**：关闭任意 Markdown 标签页（包括未修改文件）都会先弹出确认
+- **Windows 兼容修复**：内嵌 Common Controls v6 清单，修复 `TaskDialogIndirect` 入口点错误
 - **纯本地**：无账号、无云端依赖、无 Electron/WebView 前端；Markdown 文件始终由你保管
 
 ## 当前状态
 
-`v0.1.2` 是当前版本：
+`v0.1.3` 是当前版本：
 
 | 平台 | 状态 |
 | --- | --- |
@@ -46,7 +47,7 @@ GitHub Releases 提供三个平台的构建：
 | Linux | 已生成 x86_64 发布包，GUI 与主要工作流在开发机实测 |
 | macOS | CI 构建 Universal `.app`（Intel + Apple Silicon）；待 macOS 实机验收 |
 
-Windows 便携版位于 `dist\mdlite.exe` 与 `target\release\mdlite.exe`；Linux 包位于 `dist\MarkLite-0.1.2-linux-x86_64.tar.gz`。
+Windows 便携版位于 `dist\mdlite.exe` 与 `target\release\mdlite.exe`；Linux 包位于 `dist\MarkLite-0.1.3-linux-x86_64.tar.gz`。
 
 三个平台的发布包由 GitHub Actions 在标签 `v*` 上自动构建：Windows / Linux / macOS Universal。macOS 与 Windows 包目前未签名，首次启动可能遇到系统安全提示。PDF 导出需要本机 Edge/Chrome/Chromium；Word 导出不需要 Office。
 
@@ -139,7 +140,7 @@ lipo -create \
   target/aarch64-apple-darwin/release/mdlite \
   target/x86_64-apple-darwin/release/mdlite \
   -output target/universal-apple-darwin/release/mdlite
-bash scripts/package-macos.sh 0.1.2 target/universal-apple-darwin/release/mdlite
+bash scripts/package-macos.sh 0.1.3 target/universal-apple-darwin/release/mdlite
 ```
 
 脚本会生成带图标和 `Info.plist` 的 `MarkLite.app`，并做 ad-hoc 签名。正式分发仍建议使用 Developer ID 签名与公证。
